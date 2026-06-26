@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IOTAT · 元器件管理</title>
+<style>
+:root {
+  /* 语义色 token */
+  --primary: #4f46e5;
+  --primary-600: #4338ca;
+  --primary-50: #eef2ff;
+  --primary-100: #e0e7ff;
+  --success: #10b981;
+  --success-50: #ecfdf5;
+  --warning: #f59e0b;
+  --warning-50: #fffbeb;
+  --danger: #ef4444;
+  --danger-50: #fef2f2;
+  --danger-600: #dc2626;
+
+  /* 表面 */
+  --bg: #f8fafc;
+  --surface: #ffffff;
+  --surface-2: #f1f5f9;
+  --text: #0f172a;
+  --text-2: #334155;
+  --text-muted: #64748b;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+
+  /* 阴影 / 圆角 */
+  --shadow-xs: 0 1px 2px rgba(15,23,42,.04);
+  --shadow-sm: 0 1px 3px rgba(15,23,42,.06), 0 1px 2px rgba(15,23,42,.04);
+  --shadow-md: 0 4px 6px -1px rgba(15,23,42,.08), 0 2px 4px -2px rgba(15,23,42,.04);
+  --shadow-lg: 0 20px 40px -10px rgba(15,23,42,.2), 0 10px 15px -5px rgba(15,23,42,.08);
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-lg: 14px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+button, input, select { font-family: inherit; font-size: inherit; }
+
+/* ---------- 顶栏 ---------- */
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--primary) 0%, #06b6d4 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(79,70,229,.25);
+}
+.logo svg { width: 18px; height: 18px; color: #fff; }
+.brand h1 { font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.brand .sub { font-size: 11px; color: var(--text-muted); }
+.header-right { display: flex; align-items: center; gap: 12px; }
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 5px;
+  background: var(--surface-2);
+  border-radius: 20px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.avatar {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+.btn-icon {
+  background: none;
+  border: 1px solid var(--border);
+  width: 32px; height: 32px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: background .15s, color .15s, border-color .15s;
+}
+.btn-icon:hover { background: var(--surface-2); color: var(--text); border-color: var(--border-strong); }
+.btn-icon:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.btn-icon svg { width: 16px; height: 16px; }
+
+/* ---------- 工具栏 ---------- */
+.toolbar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.search {
+  position: relative;
+  flex: 0 1 280px;
+}
+.search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px; height: 16px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.search input {
+  width: 100%;
+  padding: 8px 10px 8px 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: 13px;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.search input:focus {
+  outline: none;
+  background: var(--surface);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79,70,229,.12);
+}
+.toolbar .spacer { flex: 1; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background .15s, border-color .15s, color .15s, transform .08s;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--surface-2); border-color: var(--border-strong); color: var(--text); }
+.btn:active { transform: translateY(1px); }
+.btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.btn svg { width: 15px; height: 15px; }
+.btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-600); border-color: var(--primary-600); color: #fff; }
+.btn-success { background: var(--success); border-color: var(--success); color: #fff; }
+.btn-success:hover { background: #059669; border-color: #059669; color: #fff; }
+.btn-danger { color: var(--danger); border-color: transparent; background: transparent; }
+.btn-danger:hover { background: var(--danger-50); color: var(--danger-600); }
+.btn-ghost { background: transparent; border-color: transparent; }
+.btn-ghost:hover { background: var(--surface-2); }
+
+.stats-bar {
+  margin-left: auto;
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  align-items: center;
+}
+.stat-item { display: flex; align-items: center; gap: 4px; }
+.stat-item b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.dot { width: 8px; height: 8px; border-radius: 50%; }
+
+/* ---------- 主区域 ---------- */
+main {
+  padding: 20px 24px;
+}
+.table-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-xs);
+}
+.table-wrap { overflow-x: auto; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 900px;
+}
+th, td {
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+}
+th {
+  background: var(--surface-2);
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+tbody tr { transition: background .1s; }
+tbody tr:hover { background: var(--primary-50); }
+tbody tr:last-child td { border-bottom: none; }
+td.num { font-variant-numeric: tabular-nums; text-align: right; }
+.cat-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: var(--surface-2);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-2);
+  font-weight: 500;
+}
+.stock-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+.stock-ok { background: var(--success-50); color: #047857; }
+.stock-low { background: var(--danger-50); color: var(--danger-600); }
+.stock-pill .dot { width: 6px; height: 6px; }
+.stock-ok .dot { background: var(--success); }
+.stock-low .dot { background: var(--danger); }
+
+.row-actions { display: flex; gap: 4px; justify-content: flex-end; }
+.icon-btn {
+  background: none;
+  border: 1px solid transparent;
+  width: 30px; height: 30px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: background .15s, color .15s, border-color .15s;
+}
+.icon-btn:hover { background: var(--surface-2); border-color: var(--border); }
+.icon-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.icon-btn svg { width: 15px; height: 15px; }
+.icon-btn.in:hover { color: var(--success); background: var(--success-50); }
+.icon-btn.out:hover { color: var(--warning); background: var(--warning-50); }
+.icon-btn.edit:hover { color: var(--primary); background: var(--primary-50); }
+.icon-btn.del:hover { color: var(--danger); background: var(--danger-50); }
+
+/* 空状态 */
+.empty {
+  padding: 60px 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.empty svg { width: 48px; height: 48px; color: #cbd5e1; margin-bottom: 12px; }
+.empty h3 { font-size: 15px; font-weight: 600; color: var(--text-2); margin-bottom: 4px; }
+.empty p { font-size: 13px; margin-bottom: 16px; }
+
+/* ---------- 模态框 ---------- */
+.mask {
+  position: fixed; inset: 0;
+  background: rgba(15,23,42,.5);
+  backdrop-filter: blur(2px);
+  z-index: 100;
+  display: none;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 16px;
+  overflow-y: auto;
+}
+.mask.show { display: flex; animation: maskIn .15s ease-out; }
+@keyframes maskIn { from { opacity: 0; } to { opacity: 1; } }
+.modal {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 440px;
+  box-shadow: var(--shadow-lg);
+  animation: modalIn .2s cubic-bezier(.16,1,.3,1);
+  margin: auto;
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(8px) scale(.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal-head {
+  padding: 20px 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.modal-head h2 { font-size: 16px; font-weight: 600; }
+.modal-body { padding: 16px 24px 24px; }
+.modal-body .grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-2); margin-bottom: 5px; }
+.field label .req { color: var(--danger); }
+.field input, .field select {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--text);
+  transition: border-color .15s, box-shadow .15s;
+}
+.field input:focus, .field select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(79,70,229,.12);
+}
+.field input:disabled { background: var(--surface-2); color: var(--text-muted); cursor: not-allowed; }
+.modal-foot {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  background: var(--surface-2);
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+/* 入出库信息条 */
+.info-bar {
+  background: var(--primary-50);
+  border: 1px solid var(--primary-100);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--text-2);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.info-bar b { color: var(--primary-700); font-variant-numeric: tabular-nums; }
+.info-bar svg { width: 16px; height: 16px; color: var(--primary); flex-shrink: 0; }
+
+/* 流水模态 */
+.modal.wide { max-width: 720px; }
+.txn-table th, .txn-table td { font-size: 12px; padding: 9px 12px; }
+.txn-table .delta-pos { color: var(--success); font-weight: 600; }
+.txn-table .delta-neg { color: var(--warning); font-weight: 600; }
+.type-tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+.type-in { background: var(--success-50); color: #047857; }
+.type-out { background: var(--warning-50); color: #b45309; }
+.type-init { background: var(--primary-50); color: var(--primary-700); }
+.type-import { background: var(--surface-2); color: var(--text-2); }
+
+/* ---------- Toast ---------- */
+.toast-container {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  background: var(--text);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: toastIn .25s cubic-bezier(.16,1,.3,1);
+  pointer-events: auto;
+}
+.toast.out { animation: toastOut .2s ease-in forwards; }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toastOut { to { opacity: 0; transform: translateY(-8px); } }
+.toast svg { width: 16px; height: 16px; flex-shrink: 0; }
+.toast.success { background: var(--success); }
+.toast.error { background: var(--danger); }
+.toast.info { background: var(--text); }
+
+/* ---------- 响应式 ---------- */
+@media (max-width: 768px) {
+  header { padding: 0 16px; }
+  .toolbar { padding: 10px 16px; }
+  main { padding: 12px 16px; }
+  .search { flex: 1 1 100%; }
+  .stats-bar { flex: 1 1 100%; justify-content: flex-start; }
+  .brand .sub { display: none; }
+  .modal-body .grid2 { grid-template-columns: 1fr; }
+}
+
+/* prefers-reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* 加载条 */
+.loading-bar {
+  height: 2px;
+  background: var(--primary);
+  position: fixed;
+  top: 60px; left: 0;
+  z-index: 11;
+  opacity: 0;
+  transition: opacity .2s;
+}
+.loading-bar.show { opacity: 1; animation: loading 1.2s ease-in-out infinite; }
+@keyframes loading {
+  0% { width: 0; left: 0; }
+  50% { width: 40%; left: 30%; }
+  100% { width: 0; left: 100%; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v6l9 4 9-4V7"/><path d="M12 11v6"/></svg>
+    </div>
+    <div>
+      <h1>元器件管理平台</h1>
+      <div class="sub">IOTAT Laboratory</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="user-chip">
+      <div class="avatar" id="avatar">I</div>
+      <span id="userLabel">—</span>
+    </div>
+    <button class="btn-icon" onclick="logout()" title="退出登录" aria-label="退出登录">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="loading-bar" id="loadingBar"></div>
+
+<div class="toolbar">
+  <div class="search">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="text" id="search" placeholder="搜索名称 / 分类 / 规格 / 位置..." oninput="onSearch(this.value)">
+  </div>
+  <button class="btn btn-primary" onclick="openAdd()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    新增器件
+  </button>
+  <button class="btn btn-success" onclick="document.getElementById('fileInput').click()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    导入
+  </button>
+  <button class="btn" onclick="downloadTemplate()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    模板
+  </button>
+  <button class="btn" onclick="exportCsv()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    导出
+  </button>
+  <button class="btn" onclick="showTransactions()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+    流水
+  </button>
+  <input type="file" id="fileInput" accept=".csv,.xlsx,.xlsm" style="display:none" onchange="uploadFile(this)">
+  <div class="stats-bar" id="statsBar"></div>
+</div>
+
+<main>
+  <div class="table-card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:110px">分类</th>
+            <th>名称</th>
+            <th>规格 / 型号</th>
+            <th style="width:70px">单位</th>
+            <th style="width:120px">位置</th>
+            <th style="width:130px; text-align:right">当前库存</th>
+            <th style="width:80px; text-align:right">预警值</th>
+            <th>备注</th>
+            <th style="width:170px; text-align:right">操作</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div id="emptyState" class="empty" style="display:none;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+      <h3>暂无器件</h3>
+      <p>点击「新增器件」或「导入」开始管理库存</p>
+      <button class="btn btn-primary" onclick="openAdd()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        新增第一个器件
+      </button>
+    </div>
+  </div>
+</main>
+
+<!-- 新增 / 编辑 -->
+<div class="mask" id="modalAdd" role="dialog" aria-modal="true" aria-labelledby="addTitle">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="addTitle">新增器件</h2>
+      <button class="btn-icon" onclick="closeModal('modalAdd')" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="field"><label>名称 <span class="req">*</span></label><input id="f_name" autocomplete="off"></div>
+      <div class="grid2">
+        <div class="field"><label>分类</label><input id="f_category" list="catList" autocomplete="off"></div>
+        <div class="field"><label>单位</label><input id="f_unit" value="个" list="unitList" autocomplete="off"></div>
+      </div>
+      <div class="field"><label>规格 / 型号</label><input id="f_spec" autocomplete="off"></div>
+      <div class="grid2">
+        <div class="field"><label>存放位置</label><input id="f_location" autocomplete="off"></div>
+        <div class="field"><label>预警值</label><input id="f_threshold" type="number" step="any" value="0"></div>
+      </div>
+      <div class="field" id="stockField"><label>初始库存</label><input id="f_stock" type="number" step="any" value="0"></div>
+      <div class="field"><label>备注</label><input id="f_remark" autocomplete="off"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeModal('modalAdd')">取消</button>
+      <button class="btn btn-primary" onclick="submitAdd()">保存</button>
+    </div>
+  </div>
+</div>
+<datalist id="catList"></datalist>
+<datalist id="unitList">
+  <option value="个"><option value="只"><option value="片"><option value="卷"><option value="包"><option value="盒">
+</datalist>
+
+<!-- 入库 -->
+<div class="mask" id="modalIn" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>入库</h2>
+      <button class="btn-icon" onclick="closeModal('modalIn')" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="info-bar" id="in_info">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+        <span></span>
+      </div>
+      <div class="field"><label>入库数量 <span class="req">*</span></label><input id="in_qty" type="number" step="any" min="0" autofocus></div>
+      <div class="field"><label>备注（可选）</label><input id="in_remark" placeholder="如：采购入 / 归还" autocomplete="off"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeModal('modalIn')">取消</button>
+      <button class="btn btn-success" onclick="submitStock('in')">确认入库</button>
+    </div>
+  </div>
+</div>
+
+<!-- 出库 -->
+<div class="mask" id="modalOut" role="dialog" aria-modal="true">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>出库 / 使用</h2>
+      <button class="btn-icon" onclick="closeModal('modalOut')" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="info-bar" id="out_info">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+        <span></span>
+      </div>
+      <div class="field"><label>出库数量 <span class="req">*</span></label><input id="out_qty" type="number" step="any" min="0" autofocus></div>
+      <div class="field"><label>备注（可选）</label><input id="out_remark" placeholder="如：项目使用 / 损耗" autocomplete="off"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeModal('modalOut')">取消</button>
+      <button class="btn btn-success" style="background:var(--warning);border-color:var(--warning)" onclick="submitStock('out')">确认出库</button>
+    </div>
+  </div>
+</div>
+
+<!-- 流水 -->
+<div class="mask" id="modalTxn" role="dialog" aria-modal="true">
+  <div class="modal wide">
+    <div class="modal-head">
+      <h2>出入库流水</h2>
+      <button class="btn-icon" onclick="closeModal('modalTxn')" aria-label="关闭">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" style="padding:8px 0 0;">
+      <div style="max-height:480px;overflow:auto;">
+        <table class="txn-table">
+          <thead><tr><th>时间</th><th>器件</th><th>类型</th><th style="text-align:right">数量</th><th>操作人</th><th>备注</th></tr></thead>
+          <tbody id="txnBody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeModal('modalTxn')">关闭</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="true"></div>
+
+<script>
+let cache = [];
+let editingId = null;
+let stockTargetId = null;
+let searchTimer = null;
+
+// ---- 工具 ----
+const $ = id => document.getElementById(id);
+const esc = s => (s==null?'':String(s)).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+const fmt = n => Number(n).toLocaleString('zh-CN', {maximumFractionDigits: 4});
+
+function toast(msg, type='info') {
+  const c = $('toastContainer');
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  const icons = {
+    success: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+    error: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+    info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>'
+  };
+  t.innerHTML = (icons[type]||icons.info) + '<span>' + esc(msg) + '</span>';
+  c.appendChild(t);
+  setTimeout(() => {
+    t.classList.add('out');
+    setTimeout(() => t.remove(), 200);
+  }, 2400);
+}
+
+function showLoading(on) {
+  $('loadingBar').classList.toggle('show', on);
+}
+
+async function api(url, opts={}) {
+  const r = await fetch(url, {
+    headers: {'Content-Type': 'application/json'},
+    ...opts,
+  });
+  if (r.status === 401) { location.href = '/'; throw new Error('未登录'); }
+  return r.json();
+}
+
+// ---- 初始化 ----
+async function init() {
+  try {
+    const d = await api('/me');
+    if (!d.ok) { location.href = '/'; return; }
+    $('userLabel').textContent = d.user;
+    $('avatar').textContent = (d.user||'?').charAt(0).toUpperCase();
+  } catch (e) { return; }
+  await loadList();
+}
+
+async function logout() {
+  await api('/logout', {method:'POST'});
+  location.href = '/';
+}
+
+function onSearch(v) {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => loadList(v), 200);
+}
+
+// ---- 列表 ----
+async function loadList(q) {
+  showLoading(true);
+  try {
+    const d = await api('/api/components?q=' + encodeURIComponent(q || ''));
+    if (!d.ok) return;
+    cache = d.data;
+    render();
+    refreshDatalist();
+  } finally {
+    showLoading(false);
+  }
+}
+
+function refreshDatalist() {
+  const cats = [...new Set(cache.map(c => c.category).filter(Boolean))];
+  $('catList').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
+}
+
+function render() {
+  const tb = $('tbody');
+  const empty = $('emptyState');
+  if (!cache.length) {
+    tb.innerHTML = '';
+    empty.style.display = 'block';
+    $('statsBar').innerHTML = '';
+    return;
+  }
+  empty.style.display = 'none';
+  tb.innerHTML = cache.map(c => {
+    const low = c.stock <= c.threshold;
+    const cls = low ? 'stock-low' : 'stock-ok';
+    const tip = low ? ' 低于预警' : '';
+    return `<tr>
+      <td><span class="cat-tag">${esc(c.category||'—')}</span></td>
+      <td><b>${esc(c.name)}</b></td>
+      <td style="color:var(--text-2)">${esc(c.spec||'—')}</td>
+      <td style="color:var(--text-muted)">${esc(c.unit||'')}</td>
+      <td style="color:var(--text-2)">${esc(c.location||'—')}</td>
+      <td class="num"><span class="stock-pill ${cls}"><span class="dot"></span>${fmt(c.stock)}</span></td>
+      <td class="num" style="color:var(--text-muted)">${fmt(c.threshold)}</td>
+      <td style="color:var(--text-muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(c.remark||'')}">${esc(c.remark||'—')}</td>
+      <td>
+        <div class="row-actions">
+          <button class="icon-btn in" title="入库" onclick="openStock('in', ${c.id})" aria-label="入库">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="12 5 12 19"/><polyline points="5 12 12 19 19 12"/></svg>
+          </button>
+          <button class="icon-btn out" title="出库" onclick="openStock('out', ${c.id})" aria-label="出库">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="12 19 12 5"/><polyline points="5 12 12 5 19 12"/></svg>
+          </button>
+          <button class="icon-btn edit" title="编辑" onclick="openEdit(${c.id})" aria-label="编辑">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="icon-btn del" title="删除" onclick="del(${c.id})" aria-label="删除">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+          </button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const total = cache.length;
+  const lowCount = cache.filter(c => c.stock <= c.threshold).length;
+  const totalStock = cache.reduce((s,c) => s + Number(c.stock||0), 0);
+  $('statsBar').innerHTML = `
+    <div class="stat-item"><span class="dot" style="background:var(--primary)"></span>品种 <b>${total}</b></div>
+    <div class="stat-item"><span class="dot" style="background:var(--success)"></span>总库存 <b>${fmt(totalStock)}</b></div>
+    ${lowCount ? `<div class="stat-item"><span class="dot" style="background:var(--danger)"></span>预警 <b>${lowCount}</b></div>` : ''}
+  `;
+}
+
+// ---- 模态 ----
+function openModal(id) { $(id).classList.add('show'); }
+function closeModal(id) { $(id).classList.remove('show'); }
+
+function openAdd() {
+  editingId = null;
+  $('addTitle').textContent = '新增器件';
+  ['f_name','f_category','f_spec','f_location','f_remark'].forEach(i => $(i).value = '');
+  $('f_unit').value = '个';
+  $('f_stock').value = '0';
+  $('f_threshold').value = '0';
+  $('stockField').style.display = '';
+  $('f_stock').disabled = false;
+  openModal('modalAdd');
+  setTimeout(() => $('f_name').focus(), 50);
+}
+
+function openEdit(id) {
+  const c = cache.find(x => x.id === id);
+  if (!c) return;
+  editingId = id;
+  $('addTitle').textContent = '编辑器件';
+  $('f_name').value = c.name;
+  $('f_category').value = c.category;
+  $('f_spec').value = c.spec;
+  $('f_unit').value = c.unit;
+  $('f_location').value = c.location;
+  $('f_stock').value = c.stock;
+  $('stockField').style.display = 'none';
+  $('f_threshold').value = c.threshold;
+  $('f_remark').value = c.remark;
+  openModal('modalAdd');
+  setTimeout(() => $('f_name').focus(), 50);
+}
+
+async function submitAdd() {
+  const body = {
+    name: $('f_name').value,
+    category: $('f_category').value,
+    spec: $('f_spec').value,
+    unit: $('f_unit').value,
+    location: $('f_location').value,
+    stock: parseFloat($('f_stock').value) || 0,
+    threshold: parseFloat($('f_threshold').value) || 0,
+    remark: $('f_remark').value,
+  };
+  if (!body.name.trim()) { toast('请填写名称', 'error'); $('f_name').focus(); return; }
+  if (editingId) {
+    const d = await api('/api/components/' + editingId, {
+      method: 'PUT',
+      body: JSON.stringify({
+        name: body.name, category: body.category, spec: body.spec,
+        unit: body.unit, location: body.location,
+        threshold: body.threshold, remark: body.remark,
+      })
+    });
+    if (d.ok) { toast('已更新', 'success'); closeModal('modalAdd'); loadList(); }
+    else toast(d.msg || '失败', 'error');
+  } else {
+    const d = await api('/api/components', {method:'POST', body: JSON.stringify(body)});
+    if (d.ok) { toast('已新增', 'success'); closeModal('modalAdd'); loadList(); }
+    else toast(d.msg || '失败', 'error');
+  }
+}
+
+function openStock(type, id) {
+  const c = cache.find(x => x.id === id);
+  if (!c) return;
+  stockTargetId = id;
+  const info = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg><span>${esc(c.name)} ${esc(c.spec||'')} · 当前库存 <b>${fmt(c.stock)} ${esc(c.unit||'')}</b></span>`;
+  if (type === 'in') {
+    $('in_info').innerHTML = info;
+    $('in_qty').value = '';
+    $('in_remark').value = '';
+    openModal('modalIn');
+    setTimeout(() => $('in_qty').focus(), 50);
+  } else {
+    $('out_info').innerHTML = info;
+    $('out_qty').value = '';
+    $('out_remark').value = '';
+    openModal('modalOut');
+    setTimeout(() => $('out_qty').focus(), 50);
+  }
+}
+
+async function submitStock(type) {
+  const qtyId = type === 'in' ? 'in_qty' : 'out_qty';
+  const remId = type === 'in' ? 'in_remark' : 'out_remark';
+  const qty = parseFloat($(qtyId).value) || 0;
+  if (qty <= 0) { toast('数量必须大于 0', 'error'); $(qtyId).focus(); return; }
+  const d = await api('/api/stock/' + type, {
+    method: 'POST',
+    body: JSON.stringify({ id: stockTargetId, qty, remark: $(remId).value })
+  });
+  if (d.ok) {
+    toast(type === 'in' ? `入库 ${fmt(qty)} 成功` : `出库 ${fmt(qty)} 成功`, 'success');
+    closeModal(type === 'in' ? 'modalIn' : 'modalOut');
+    loadList();
+  } else {
+    toast(d.msg || '操作失败', 'error');
+  }
+}
+
+async function del(id) {
+  const c = cache.find(x => x.id === id);
+  if (!c) return;
+  if (!confirm(`确认删除「${c.name} ${c.spec||''}」？\n此操作不可恢复，相关流水也会清除。`)) return;
+  const d = await api('/api/components/' + id, {method:'DELETE'});
+  if (d.ok) { toast('已删除', 'success'); loadList(); }
+  else toast(d.msg || '失败', 'error');
+}
+
+async function uploadFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  toast('正在导入...', 'info');
+  try {
+    const r = await fetch('/api/import', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.ok) {
+      toast(`导入完成：成功 ${d.imported} 条，跳过 ${d.skipped} 条`, 'success');
+      loadList();
+    } else {
+      toast(d.msg || '导入失败', 'error');
+    }
+  } catch (e) {
+    toast('导入失败: ' + e.message, 'error');
+  }
+  input.value = '';
+}
+
+function downloadTemplate() { location.href = '/api/template'; }
+function exportCsv() { location.href = '/api/export'; }
+
+async function showTransactions() {
+  const d = await api('/api/transactions?limit=200');
+  if (!d.ok) return;
+  const body = $('txnBody');
+  if (!d.data.length) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text-muted)">暂无流水记录</td></tr>';
+  } else {
+    const typeMap = { in:['入库','type-in'], out:['出库','type-out'], import:['导入','type-import'], init:['初始','type-init'] };
+    body.innerHTML = d.data.map(t => {
+      const [label, cls] = typeMap[t.type] || [t.type, 'type-import'];
+      const sign = t.delta >= 0 ? '+' : '';
+      const dcls = t.delta >= 0 ? 'delta-pos' : 'delta-neg';
+      return `<tr>
+        <td style="white-space:nowrap;color:var(--text-muted);font-variant-numeric:tabular-nums">${esc(t.created_at)}</td>
+        <td>${esc(t.name)} <span style="color:var(--text-muted)">${esc(t.spec||'')}</span></td>
+        <td><span class="type-tag ${cls}">${label}</span></td>
+        <td class="num ${dcls}">${sign}${fmt(t.delta)}</td>
+        <td style="color:var(--text-2)">${esc(t.operator||'—')}</td>
+        <td style="color:var(--text-muted)">${esc(t.remark||'—')}</td>
+      </tr>`;
+    }).join('');
+  }
+  openModal('modalTxn');
+}
+
+// 关闭：点遮罩 / Esc
+document.querySelectorAll('.mask').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('show'); });
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.mask.show').forEach(m => m.classList.remove('show'));
+  }
+});
+
+// 回车快捷
+$('in_qty').addEventListener('keydown', e => { if (e.key==='Enter') submitStock('in'); });
+$('out_qty').addEventListener('keydown', e => { if (e.key==='Enter') submitStock('out'); });
+
+init();
+</script>
+</body>
+</html>
