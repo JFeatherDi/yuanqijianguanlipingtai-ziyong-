@@ -1,0 +1,20 @@
+# 确保 shell 脚本在 checkout 时始终使用 LF 行尾
+start.sh text eol=lf
+
+# Windows 批处理保持 CRLF
+start.bat text eol=crlf
+
+# Python 文件自动转换（由 git 处理）
+*.py text
+*.html text
+*.css text
+*.js text
+*.md text
+*.txt text
+requirements.txt text
+
+# 二进制/生成文件不转换
+data.db binary
+*.png binary
+*.jpg binary
+*.ico binary
