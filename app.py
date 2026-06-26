@@ -2,9 +2,12 @@
 import os
 import io
 import csv
+import time
 import sqlite3
-from datetime import datetime
+import threading
+from datetime import datetime, timedelta
 from functools import wraps
+from collections import defaultdict
 
 from flask import (
     Flask, request, session, jsonify, send_from_directory,
@@ -21,16 +24,64 @@ USERNAME = "IOTAT"
 PASSWORD = "swust350351"
 SECRET_KEY = "swust-lab-components-2026"
 
+# 并发与安全参数
+DB_BUSY_TIMEOUT_MS = 10000        # SQLite 写锁等待 10 秒
+SESSION_LIFETIME_HOURS = 12       # session 12 小时过期
+LOGIN_MAX_FAIL = 5                # 登录失败 5 次
+LOGIN_LOCK_SECONDS = 300          # 锁定 5 分钟
+MAX_WORKER_THREADS = 8            # 最大并发请求线程数
+
 app = Flask(__name__, static_folder=None)
 app.secret_key = SECRET_KEY
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 * 1024  # 8MB 上传上限
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=SESSION_LIFETIME_HOURS)
+app.config["SESSION_REFRESH_EACH_REQUEST"] = True    # 每次请求续期
+
+
+# ---------- 登录限流 ----------
+_login_fails = defaultdict(list)   # key -> [timestamp, ...]
+_login_lock = threading.Lock()
+
+
+def _login_key():
+    return (request.remote_addr or "unknown")
+
+
+def check_login_limit():
+    """返回 (是否允许, 剩余锁定秒数)。"""
+    now = time.time()
+    key = _login_key()
+    with _login_lock:
+        fails = _login_fails[key]
+        # 清理过期记录（超过锁定窗口）
+        _login_fails[key] = [t for t in fails if now - t < LOGIN_LOCK_SECONDS]
+        if len(_login_fails[key]) >= LOGIN_MAX_FAIL:
+            oldest = _login_fails[key][0]
+            remain = int(LOGIN_LOCK_SECONDS - (now - oldest))
+            return False, max(remain, 0)
+        return True, 0
+
+
+def record_login_fail():
+    with _login_lock:
+        _login_fails[_login_key()].append(time.time())
+
+
+def clear_login_fails():
+    with _login_lock:
+        _login_fails.pop(_login_key(), None)
 
 
 # ---------- 数据库 ----------
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(DB_PATH)
-        g.db.row_factory = sqlite3.Row
+        conn = sqlite3.connect(DB_PATH, timeout=DB_BUSY_TIMEOUT_MS / 1000)
+        conn.row_factory = sqlite3.Row
+        # 开启 WAL：读不阻塞写，写不阻塞读，大幅提升并发
+        conn.execute(f"PRAGMA busy_timeout = {DB_BUSY_TIMEOUT_MS}")
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA synchronous = NORMAL")  # WAL 下安全且更快
+        g.db = conn
     return g.db
 
 
@@ -42,7 +93,9 @@ def close_db(exc):
 
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
     conn.executescript("""
     CREATE TABLE IF NOT EXISTS components (
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,7 +113,7 @@ def init_db():
         id          INTEGER PRIMARY KEY AUTOINCREMENT,
         component_id INTEGER NOT NULL,
         delta       REAL NOT NULL,
-        type        TEXT NOT NULL,   -- in / out / import / init
+        type        TEXT NOT NULL,
         operator    TEXT,
         remark      TEXT,
         created_at  TEXT NOT NULL,
@@ -93,11 +146,16 @@ def row_to_dict(row):
 
 
 def apply_change(db, comp_id, delta, ttype, operator, remark=""):
-    """统一处理库存变更 + 流水写入。delta 负数=出库。"""
+    """累加库存 + 写流水。delta 负数=出库。用于入库/导入/初始。"""
     db.execute(
         "UPDATE components SET stock = stock + ? WHERE id = ?",
         (delta, comp_id),
     )
+    log_transaction(db, comp_id, delta, ttype, operator, remark)
+
+
+def log_transaction(db, comp_id, delta, ttype, operator, remark=""):
+    """仅写流水，不动库存。用于已原子扣减的出库场景。"""
     db.execute(
         "INSERT INTO transactions (component_id, delta, type, operator, remark, created_at) "
         "VALUES (?, ?, ?, ?, ?, ?)",
@@ -115,12 +173,19 @@ def index():
 
 @app.route("/login", methods=["POST"])
 def login():
+    allowed, remain = check_login_limit()
+    if not allowed:
+        return jsonify({"ok": False, "msg": f"登录失败次数过多，请 {remain} 秒后再试"}), 429
     data = request.get_json(silent=True) or {}
     u = (data.get("username") or "").strip()
     p = (data.get("password") or "").strip()
     if u == USERNAME and p == PASSWORD:
+        clear_login_fails()
+        session.permanent = True
         session["user"] = u
+        session["login_at"] = time.time()
         return jsonify({"ok": True, "user": u})
+    record_login_fail()
     return jsonify({"ok": False, "msg": "账号或密码错误"}), 401
 
 
@@ -221,10 +286,13 @@ def stock_in():
     db = get_db()
     d = request.get_json(silent=True) or {}
     cid = d.get("id")
-    qty = float(d.get("qty") or 0)
+    try:
+        qty = float(d.get("qty") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "msg": "数量格式错误"}), 400
     if qty <= 0:
         return jsonify({"ok": False, "msg": "数量必须大于 0"}), 400
-    comp = db.execute("SELECT * FROM components WHERE id = ?", (cid,)).fetchone()
+    comp = db.execute("SELECT stock FROM components WHERE id = ?", (cid,)).fetchone()
     if not comp:
         return jsonify({"ok": False, "msg": "器件不存在"}), 404
     apply_change(db, cid, qty, "in", session.get("user"), d.get("remark", ""))
@@ -238,33 +306,45 @@ def stock_out():
     db = get_db()
     d = request.get_json(silent=True) or {}
     cid = d.get("id")
-    qty = float(d.get("qty") or 0)
+    try:
+        qty = float(d.get("qty") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "msg": "数量格式错误"}), 400
     if qty <= 0:
         return jsonify({"ok": False, "msg": "数量必须大于 0"}), 400
-    comp = db.execute("SELECT * FROM components WHERE id = ?", (cid,)).fetchone()
-    if not comp:
-        return jsonify({"ok": False, "msg": "器件不存在"}), 404
-    if comp["stock"] < qty:
+
+    # 原子扣减：WHERE stock >= ? 保证不会扣成负数
+    # rowcount=1 成功，=0 表示库存不足或器件不存在
+    cur = db.execute(
+        "UPDATE components SET stock = stock - ? WHERE id = ? AND stock >= ?",
+        (qty, cid, qty),
+    )
+    if cur.rowcount == 0:
+        db.rollback()
+        comp = db.execute("SELECT stock FROM components WHERE id = ?", (cid,)).fetchone()
+        if not comp:
+            return jsonify({"ok": False, "msg": "器件不存在"}), 404
         return jsonify({"ok": False, "msg": f"库存不足，当前 {comp['stock']}"}), 400
-    apply_change(db, cid, -qty, "out", session.get("user"), d.get("remark", ""))
+    # 原子 UPDATE 已扣减库存，这里只写流水
+    log_transaction(db, cid, -qty, "out", session.get("user"), d.get("remark", ""))
     db.commit()
-    return jsonify({"ok": True, "stock": comp["stock"] - qty})
+    new_stock = db.execute("SELECT stock FROM components WHERE id = ?", (cid,)).fetchone()["stock"]
+    return jsonify({"ok": True, "stock": new_stock})
 
 
 # ---------- 导入 ----------
 @app.route("/api/import", methods=["POST"])
 @login_required
 def import_file():
-    db = get_db()
     if "file" not in request.files:
         return jsonify({"ok": False, "msg": "未上传文件"}), 400
     f = request.files["file"]
     filename = (f.filename or "").lower()
 
     try:
+        # ---- 阶段 1：解析文件，不持数据库连接 ----
         raw = f.read()
         if filename.endswith(".csv"):
-            # 尝试 utf-8-sig，失败回退 gbk（Excel 中文 CSV 常为 gbk）
             try:
                 text = raw.decode("utf-8-sig")
             except UnicodeDecodeError:
@@ -275,6 +355,7 @@ def import_file():
             wb = load_workbook(filename=io.BytesIO(raw), read_only=True, data_only=True)
             ws = wb.active
             rows = [[c.value for c in r] for r in ws.iter_rows()]
+            wb.close()
         else:
             return jsonify({"ok": False, "msg": "仅支持 .csv / .xlsx"}), 400
 
@@ -303,11 +384,12 @@ def import_file():
                 col_map["remark"] = idx
 
         if "name" not in col_map:
-            # 第一种情况：第一列强制作为 name
             col_map["name"] = 0
 
         data_rows = rows[1:] if any(col_map.values()) else rows
-        ok = 0
+
+        # 预处理成内存中的待写入列表
+        to_write = []
         skip = 0
         for r in data_rows:
             if not r or all((v is None or str(v).strip() == "") for v in r):
@@ -333,31 +415,44 @@ def import_file():
                 threshold = float(pick("threshold", "0")) or 0.0
             except ValueError:
                 threshold = 0.0
+            to_write.append({
+                "name": name, "category": pick("category"), "spec": spec,
+                "unit": pick("unit", "个"), "location": pick("location"),
+                "stock": stock, "threshold": threshold, "remark": pick("remark"),
+            })
 
-            existing = db.execute(
-                "SELECT id, stock FROM components WHERE name = ? AND IFNULL(spec,'') = IFNULL(?, '')",
-                (name, spec),
-            ).fetchone()
-            if existing:
-                if stock:
-                    apply_change(db, existing["id"], stock, "import",
-                                 session.get("user"), "导入累加")
-                ok += 1
-            else:
-                cur = db.execute(
-                    "INSERT INTO components (name, category, spec, unit, location, stock, threshold, remark) "
-                    "VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
-                    (name, pick("category"), spec, pick("unit", "个"),
-                     pick("location"), threshold, pick("remark")),
-                )
-                if stock:
-                    apply_change(db, cur.lastrowid, stock, "init",
-                                 session.get("user"), "导入初始")
-                ok += 1
-        db.commit()
+        # ---- 阶段 2：开短事务批量写入 ----
+        db = get_db()
+        operator = session.get("user")
+        ok = 0
+        try:
+            for item in to_write:
+                existing = db.execute(
+                    "SELECT id FROM components WHERE name = ? AND IFNULL(spec,'') = IFNULL(?, '')",
+                    (item["name"], item["spec"]),
+                ).fetchone()
+                if existing:
+                    if item["stock"]:
+                        apply_change(db, existing["id"], item["stock"],
+                                     "import", operator, "导入累加")
+                    ok += 1
+                else:
+                    cur = db.execute(
+                        "INSERT INTO components (name, category, spec, unit, location, stock, threshold, remark) "
+                        "VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+                        (item["name"], item["category"], item["spec"], item["unit"],
+                         item["location"], item["threshold"], item["remark"]),
+                    )
+                    if item["stock"]:
+                        apply_change(db, cur.lastrowid, item["stock"],
+                                     "init", operator, "导入初始")
+                    ok += 1
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
         return jsonify({"ok": True, "imported": ok, "skipped": skip})
     except Exception as e:
-        db.rollback()
         return jsonify({"ok": False, "msg": f"解析失败: {e}"}), 500
 
 
@@ -420,6 +515,26 @@ def template():
     )
 
 
+def run_server():
+    """启动生产级 WSGI 服务器（waitress），限制并发线程防止小服务器进程堆积。"""
+    try:
+        from waitress import serve
+        serve(
+            app,
+            host="0.0.0.0",
+            port=5000,
+            threads=MAX_WORKER_THREADS,     # 最大并发线程数
+            connection_limit=20,            # 最大连接数（含排队）
+            channel_timeout=30,             # 单请求超时 30 秒
+            recv_bytes=8 * 1024 * 1024,     # 8MB 上传上限
+        )
+    except ImportError:
+        # 回退到 Flask dev server（仅开发/调试用）
+        print("[WARN] 未安装 waitress，回退到 Flask dev server（不推荐生产使用）")
+        print("[WARN] 请运行: pip install waitress")
+        app.run(host="0.0.0.0", port=5000, threaded=True)
+
+
 if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=5000, threaded=True)
+    run_server()
