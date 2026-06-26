@@ -3,7 +3,10 @@ import os
 import io
 import csv
 import time
+import hmac
+import hashlib
 import sqlite3
+import subprocess
 import threading
 from datetime import datetime, timedelta
 from functools import wraps
@@ -30,6 +33,7 @@ SESSION_LIFETIME_HOURS = 12       # session 12 小时过期
 LOGIN_MAX_FAIL = 5                # 登录失败 5 次
 LOGIN_LOCK_SECONDS = 300          # 锁定 5 分钟
 MAX_WORKER_THREADS = 8            # 最大并发请求线程数
+WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "swust-webhook-secret-change-me")
 
 app = Flask(__name__, static_folder=None)
 app.secret_key = SECRET_KEY
@@ -513,6 +517,42 @@ def template():
         mimetype="text/csv",
         headers={"Content-Disposition": "attachment; filename=template.csv"},
     )
+
+
+# ---------- Webhook ----------
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    """GitHub Webhook — 自动 git pull + 重启服务。
+    推送代码后 GitHub 会 POST 到此端点，验证签名后执行 deploy.sh。"""
+    # 1. 验证签名
+    raw = request.get_data()
+    sig = request.headers.get("X-Hub-Signature-256", "")
+    if not WEBHOOK_SECRET or not sig:
+        return jsonify({"ok": False, "msg": "webhook secret not configured"}), 403
+    expected = "sha256=" + hmac.new(
+        WEBHOOK_SECRET.encode(), raw, hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(sig, expected):
+        return jsonify({"ok": False, "msg": "invalid signature"}), 403
+
+    # 2. 仅处理 push 事件
+    event = request.headers.get("X-GitHub-Event", "")
+    if event != "push":
+        return jsonify({"ok": True, "msg": f"ignored event: {event}"})
+
+    # 3. 异步执行部署脚本（不阻塞响应）
+    script = os.path.join(BASE_DIR, "deploy.sh")
+    try:
+        subprocess.Popen(
+            ["bash", script],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=BASE_DIR,
+        )
+    except FileNotFoundError:
+        return jsonify({"ok": False, "msg": "deploy.sh not found"}), 500
+
+    return jsonify({"ok": True, "msg": "deploy triggered"})
 
 
 def run_server():

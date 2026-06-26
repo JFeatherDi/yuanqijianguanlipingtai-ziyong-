@@ -1,0 +1,26 @@
+[Unit]
+Description=IOTAT 实验室元器件管理平台
+After=network.target
+
+[Service]
+Type=simple
+User=debian
+WorkingDirectory=/home/debian/components
+ExecStart=/home/debian/components/start.sh
+Restart=always
+RestartSec=5
+
+# 安全加固（start.sh 内部创建 venv，放宽限制）
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/debian/components /home/debian/.cache/pip /home/debian/.local/share /tmp
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=auto-deploy
+
+[Install]
+WantedBy=multi-user.target
