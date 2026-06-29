@@ -33,6 +33,18 @@ echo "[3/4] 初始化数据库..."
 python -c "from app import init_db; init_db()"
 
 echo "[4/4] 启动服务..."
+
+# 检查端口占用，如果已有旧进程在运行则先提示
+PORT=5000
+if ss -tlnp | grep -q ":${PORT} "; then
+    OLD_PID=$(ss -tlnp | grep ":${PORT} " | grep -oP 'pid=\K\d+')
+    echo "[WARN] 端口 ${PORT} 已被 PID ${OLD_PID} 占用"
+    echo "[WARN] 如果这是 systemd 服务，请用: systemctl restart auto-deploy"
+    echo "[WARN] 即将杀掉旧进程并重新启动..."
+    kill "$OLD_PID" 2>/dev/null
+    sleep 1
+fi
+
 echo ""
 echo "===================================="
 echo "  ✅ 启动成功"
