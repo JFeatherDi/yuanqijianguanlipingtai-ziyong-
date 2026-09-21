@@ -1,0 +1,1 @@
+import{B as e,Z as t,lt as n}from"./index-DqahAsjG.js";var r=Symbol(`app-refresh`);function i(){let e=n(0);return t(r,e),e}function a(){return e(r,n(0))}export{a as n,i as t};

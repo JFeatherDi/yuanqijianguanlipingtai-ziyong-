@@ -1,1 +1,0 @@
-import{D as e,L as t}from"./index-DL-D219v.js";import{t as n}from"./StockMovePanel-BFRJc0XT.js";var r={__name:`StockInView`,setup(r){return(r,i)=>(t(),e(n,{mode:`in`}))}};export{r as default};

@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import io
 import os
+import struct
 import sys
 import tempfile
 import time
@@ -37,6 +38,8 @@ os.environ["WEBHOOK_SECRET"] = SMOKE_SECRET
 os.environ["APP_DEPLOY_SCRIPT"] = SMOKE_SCRIPT
 os.environ["APP_DEPLOY_LOG"] = SMOKE_LOG
 
+from backend import captcha as captcha_lib  # noqa: E402
+from backend import security  # noqa: E402
 from backend.app import create_app  # noqa: E402
 
 app = create_app()
@@ -53,13 +56,68 @@ def check(label, condition, detail=""):
         failures.append(label)
 
 
+def new_captcha():
+    """取一张新验证码并读出答案。
+
+    答案只留在服务端内存里，接口不回传，所以测试只能直接查那张表；
+    这也是这个设计「脚本读 cookie 拿不到答案」的证明。
+    """
+    client.get("/api/auth/captcha")
+    with client.session_transaction() as sess:
+        token = sess[captcha_lib.SESSION_KEY]
+    return captcha_lib._entries[token][0]
+
+
 # --- 未登录访问应被拦截 ---
 check("未登录访问被拦截", client.get("/api/components").status_code == 401)
 
+# --- 验证码 ---
+captcha_image = client.get("/api/auth/captcha")
+check(
+    "验证码接口返回 PNG",
+    captcha_image.status_code == 200 and captcha_image.headers["Content-Type"] == "image/png",
+)
+check("验证码不被缓存", "no-store" in captcha_image.headers["Cache-Control"])
+check("验证码是合法 PNG", captcha_image.data[:8] == b"\x89PNG\r\n\x1a\n")
+check(
+    "验证码尺寸是前端的 2 倍",
+    struct.unpack(">II", captcha_image.data[16:24]) == (captcha_lib.WIDTH, captcha_lib.HEIGHT),
+)
+
+# 缺验证码 / 验证码错误都必须被挡在密码校验之前
+check(
+    "缺验证码被拒绝",
+    client.post("/api/auth/login", json={"username": "IOTAT", "password": "swust350351"}).status_code == 400,
+)
+check(
+    "验证码错误被拒绝",
+    client.post(
+        "/api/auth/login",
+        json={"username": "IOTAT", "password": "swust350351", "captcha": "0000"},
+    ).status_code == 400,
+)
+
+# 限流按 IP 记，上面的失败已经累积了几个；显式清零，免得后面的用例被 429 干扰
+security._failures.clear()
+
 # --- 登录 ---
-check("错误密码被拒绝", client.post("/api/auth/login", json={"username": "x", "password": "y"}).status_code == 401)
-login = client.post("/api/auth/login", json={"username": "IOTAT", "password": "swust350351"})
-check("登录成功", login.status_code == 200 and login.get_json()["ok"])
+code = new_captcha()
+wrong_password = client.post(
+    "/api/auth/login", json={"username": "IOTAT", "password": "y", "captcha": code}
+)
+check("验证码正确但密码错误 -> 401", wrong_password.status_code == 401, wrong_password.get_json())
+
+# 验证码是单次消费的：同一张再用一次必须被拒，防重放
+replay = client.post(
+    "/api/auth/login", json={"username": "IOTAT", "password": "swust350351", "captcha": code}
+)
+check("验证码用过即废", replay.status_code == 400, replay.get_json())
+
+lowered = new_captcha().lower()
+lowered_login = client.post(
+    "/api/auth/login", json={"username": "IOTAT", "password": "swust350351", "captcha": lowered}
+)
+check("登录成功（小写输入也认）", lowered_login.status_code == 200 and lowered_login.get_json()["ok"])
 check("获取当前用户", client.get("/api/auth/me").get_json()["user"] == "IOTAT")
 
 # --- 新建器件 ---

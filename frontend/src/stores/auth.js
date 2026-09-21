@@ -23,10 +23,10 @@ export const useAuthStore = defineStore('auth', () => {
     return isAuthenticated.value
   }
 
-  async function login(username, password) {
+  async function login(username, password, captcha) {
     pending.value = true
     try {
-      const res = await authApi.login(username, password)
+      const res = await authApi.login({ username, password, captcha })
       user.value = res.user ?? username
       return res
     } finally {

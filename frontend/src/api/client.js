@@ -39,7 +39,14 @@ async function parseBody(response) {
   return response.text().catch(() => null)
 }
 
-async function request(method, path, { query, body, form, signal } = {}) {
+/**
+ * 返回 401 的接口分两类，处理方式相反：
+ *   - 需要会话的接口（默认 session: true）：401 说明会话没了，走 onUnauthorized()
+ *     统一清会话 + 回登录页，报错文案也统一成「登录状态已失效」。
+ *   - 登录接口本身（session: false）：401 是「账号或密码错误」这种业务结果，
+ *     会话本来就是空的，此时既不能跳转，也不能覆盖后端给的提示。
+ */
+async function request(method, path, { query, body, form, signal, session: usesSession = true } = {}) {
   const options = {
     method,
     credentials: 'include', // 分离部署时携带 Session Cookie
@@ -65,8 +72,11 @@ async function request(method, path, { query, body, form, signal } = {}) {
   const payload = await parseBody(response)
 
   if (response.status === 401) {
-    onUnauthorized()
-    throw new HttpError('登录状态已失效，请重新登录', { status: 401, payload })
+    if (usesSession) {
+      onUnauthorized()
+      throw new HttpError('登录状态已失效，请重新登录', { status: 401, payload })
+    }
+    throw new HttpError((payload && payload.msg) || '账号或密码错误', { status: 401, payload })
   }
 
   if (!response.ok) {

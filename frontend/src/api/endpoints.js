@@ -7,9 +7,13 @@ import { http } from './client'
 const BASE = '/api'
 
 export const authApi = {
-  login: (username, password) => http.post(`${BASE}/auth/login`, { username, password }),
+  // 登录接口自己不依赖会话：400 是验证码不对、401 是账号密码不对，
+  // 都是业务结果而非「会话失效」，所以显式声明，别让 401 触发跳转逻辑
+  login: (payload) => http.post(`${BASE}/auth/login`, payload, { session: false }),
   logout: () => http.post(`${BASE}/auth/logout`),
   me: () => http.get(`${BASE}/auth/me`),
+  // 验证码交给 <img> 直接引用：浏览器会自己带 Cookie，也省掉 fetch + blob 两步
+  captchaPath: `${BASE}/auth/captcha`,
 }
 
 export const componentApi = {
