@@ -15,6 +15,11 @@ start.bat text eol=crlf
 *.txt text
 requirements.txt text
 
+# 配置文件入库存 LF：否则编辑器在 Windows 上写入的 CRLF 会被原样提交，
+# 让 git diff --check 一直报 trailing whitespace
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
 # 二进制 / 生成文件不做转换
 data.db binary
 *.png binary
