@@ -1,0 +1,1 @@
+.btn__spinner[data-v-2d9e88ef]{opacity:.75;border:2px solid;border-top-color:#0000;border-radius:50%;flex:none;width:13px;height:13px;animation:.7s linear infinite btn-spin-2d9e88ef}@keyframes btn-spin-2d9e88ef{to{transform:rotate(360deg)}}@media (prefers-reduced-motion:reduce){.btn__spinner[data-v-2d9e88ef]{animation-duration:2s}}

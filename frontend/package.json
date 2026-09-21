@@ -1,0 +1,21 @@
+{
+  "name": "iotat-components-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "IOTAT 实验室元器件管理平台 · 前端（Vue 3 + Vite）",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "pinia": "^4.0.3",
+    "vue": "^3.5.43",
+    "vue-router": "^5.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.9",
+    "vite": "^8.3.0"
+  }
+}

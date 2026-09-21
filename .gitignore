@@ -1,6 +1,31 @@
+# ---------- Python ----------
 venv/
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+
+# ---------- SQLite（WAL 模式会额外产生两个文件）----------
 data.db
+data.db-wal
+data.db-shm
+data.db-journal
+backend/data.db
+backend/data.db-wal
+backend/data.db-shm
+backend/data.db-journal
+
+# ---------- 前端依赖 ----------
+# 注意：frontend/dist 是刻意提交的构建产物，
+# 这样低配服务器只需要 Python，无需安装 Node 工具链。
+node_modules/
+frontend/node_modules/
+
+# ---------- 系统 ----------
 .DS_Store
 *.log
+
+# ---------- 编辑器 / IDE ----------
+.vscode/
+.idea/
+*.swp
