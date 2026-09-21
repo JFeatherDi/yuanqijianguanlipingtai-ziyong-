@@ -22,6 +22,8 @@ PROJECT_DIR = os.path.dirname(BACKEND_DIR)
 
 DEFAULT_DB_PATH = os.path.join(BACKEND_DIR, "data.db")
 DEFAULT_DIST_DIR = os.path.join(PROJECT_DIR, "frontend", "dist")
+DEFAULT_DEPLOY_SCRIPT = os.path.join(PROJECT_DIR, "deploy.sh")
+DEFAULT_DEPLOY_LOG = os.path.join(PROJECT_DIR, "deploy.log")
 
 
 class Config:
@@ -54,6 +56,12 @@ class Config:
     WORKER_THREADS = _env("APP_THREADS", 8, int)
     CONNECTION_LIMIT = _env("APP_CONNECTION_LIMIT", 20, int)
     CHANNEL_TIMEOUT = _env("APP_CHANNEL_TIMEOUT", 30, int)
+
+    # ---- 自动部署 Webhook（GitHub push 触发）----
+    # 密钥为空时接口直接拒绝服务，避免用弱默认值把部署入口开在公网
+    WEBHOOK_SECRET = _env("WEBHOOK_SECRET", "")
+    DEPLOY_SCRIPT = _env("APP_DEPLOY_SCRIPT", DEFAULT_DEPLOY_SCRIPT)
+    DEPLOY_LOG = _env("APP_DEPLOY_LOG", DEFAULT_DEPLOY_LOG)
 
     # ---- 跨域（前端开发服务器）----
     CORS_ORIGINS = tuple(

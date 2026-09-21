@@ -49,11 +49,13 @@
 │   │   ├── components.py        # 元器件 CRUD
 │   │   ├── stock.py             # 入库 / 出库
 │   │   ├── records.py           # 流水查询、导入、导出、模板
-│   │   └── stats.py             # 看板统计（概览 / 分类 / 趋势）
+│   │   ├── stats.py             # 看板统计（概览 / 分类 / 趋势）
+│   │   └── deploy.py            # /webhook（签名校验 + 触发部署）
 │   ├── services/                # 业务逻辑（不依赖 Flask 请求上下文）
 │   │   ├── catalog.py           # 字段规范化与校验
 │   │   ├── inventory.py         # 库存变更唯一入口
-│   │   └── importer.py          # Excel / CSV 解析（纯函数）
+│   │   ├── importer.py          # Excel / CSV 解析（纯函数）
+│   │   └── deploy.py            # 签名比较与部署脚本派生
 │   ├── tests/smoke.py           # 接口冒烟测试
 │   └── requirements.txt
 ├── frontend/                    # 前端（Vue 3 + Vite）
@@ -70,6 +72,8 @@
 │   ├── dist/                    # 构建产物（已提交，见下方说明）
 │   └── vite.config.js
 ├── start.sh / start.bat         # 一键启动
+├── deploy.sh                    # 自动部署脚本（由 webhook 触发）
+├── auto-deploy.service          # systemd 服务文件
 └── backend/data.db              # SQLite 数据库（首次启动自动生成）
 ```
 
@@ -125,6 +129,9 @@ npm run dev          # http://localhost:5173
 | `APP_THREADS` / `APP_CONNECTION_LIMIT` | `8` / `20` | waitress 并发限制 |
 | `APP_CORS_ORIGINS` | `http://localhost:5173,...` | 允许携带 Cookie 跨域的前端地址 |
 | `APP_STATIC_DIST` | `frontend/dist` | 前端构建产物目录 |
+| `WEBHOOK_SECRET` | 空 | Webhook 签名密钥，**为空时 `/webhook` 拒绝服务** |
+| `APP_DEPLOY_SCRIPT` | `deploy.sh` | 自动部署脚本路径 |
+| `APP_DEPLOY_LOG` | `deploy.log` | 部署脚本输出日志 |
 
 ## 批量导入
 
@@ -160,6 +167,8 @@ GET    /api/stats/overview        看板概览指标
 GET    /api/stats/categories      分类库存分布
 GET    /api/stats/flow?days=7     出入库趋势
 GET    /api/health                健康检查
+
+POST   /webhook                   GitHub Webhook（HMAC 校验后触发部署，不在 /api 下）
 ```
 
 所有接口返回统一的 `{ ok: boolean, ... }` 封套；未登录返回 `401`。
@@ -183,7 +192,11 @@ python backend/tests/smoke.py
 ```
 
 覆盖登录鉴权、限流、CRUD、出入库与超额拦截、筛选、统计分组、导入导出、
-缓存头与 SPA 回退等 41 项断言，跑完自动清理临时数据库。
+Webhook 签名校验、缓存头与 SPA 回退等 53 项断言，跑完自动清理临时数据库。
+
+Webhook 用例会把部署脚本指向临时脚本，绝不会真的执行仓库里的 `deploy.sh`；
+本机没有 `bash` 时会跳过「真实执行」那一条（开发机 Windows 常见），因此在
+服务器的 Debian 上会多跑一项。
 
 ## 访问
 
@@ -204,7 +217,6 @@ A: 可以。`frontend/dist` 已提交，只需 Python。若修改了前端源码
 A: 设置环境变量 `APP_PORT=8000`，或修改 `backend/config.py` 的默认值。
 
 **Q: 如何备份数据？**
-<<<<<<< HEAD
 A: 复制 `backend/data.db` 即可（建议先停服务，或连同 `-wal` / `-shm` 一起复制）。
 
 **Q: 换了域名 / 端口，跨域报错？**
@@ -214,19 +226,18 @@ A: 把前端地址加入 `APP_CORS_ORIGINS`（逗号分隔）。
 
 - 默认账号密码内置，**正式部署请通过 `APP_USERNAME` / `APP_PASSWORD` / `APP_SECRET_KEY` 覆盖**
 - 服务监听 `0.0.0.0`，建议仅在内网或通过内网穿透使用，不要直接暴露公网
+- **部署入口**：`/webhook` 用 HMAC-SHA256 校验 GitHub 签名，且强制要求配置 `WEBHOOK_SECRET`
 - 如需 HTTPS，建议在穿透层或反向代理层处理
-=======
-A: 直接复制 `data.db` 文件即可。
 
+## 自动部署（GitHub push 触发）
 
-## 🔄 Git 推送自动部署（Debian 服务器）
+配置完成后，本地 `git push` → 服务器自动拉取代码并重启服务。
 
-配置后，本地 `git push` → 服务器自动拉取代码并重启服务。
+链路：**GitHub Webhook → `POST /webhook` → 签名校验 → `deploy.sh` → `git pull` + 重启服务**。
 
 ### 1. 服务器初始安装
 
 ```bash
-# 克隆项目到服务器
 git clone git@github.com:JFeatherDi/yuanqijianguanlipingtai-ziyong-.git ~/components
 cd ~/components
 bash start.sh    # 首次启动，创建 venv 和数据库
@@ -234,15 +245,22 @@ bash start.sh    # 首次启动，创建 venv 和数据库
 
 ### 2. 配置 Webhook Secret
 
-在服务器上设置环境变量（与 GitHub Webhook 配置保持一致）：
+`WEBHOOK_SECRET` 没有内置默认值，**不配置时 `/webhook` 直接返回 503**——
+避免用一个人人可见的弱密钥把部署入口开在公网上。
 
 ```bash
-# 生成随机密钥
-openssl rand -hex 32
-# 写入 systemd 服务环境
+openssl rand -hex 32    # 生成随机密钥
+```
+
+写入 systemd drop-in（而不是改仓库里的 `auto-deploy.service`，那样每次拉取都会被覆盖）：
+
+```bash
 sudo mkdir -p /etc/systemd/system/auto-deploy.service.d
-echo '[Service]
-Environment="WEBHOOK_SECRET=你的随机密钥"' | sudo tee /etc/systemd/system/auto-deploy.service.d/webhook.conf
+sudo tee /etc/systemd/system/auto-deploy.service.d/webhook.conf <<'EOF'
+[Service]
+Environment="WEBHOOK_SECRET=你的随机密钥"
+EOF
+sudo systemctl daemon-reload
 ```
 
 ### 3. 安装 systemd 服务
@@ -254,18 +272,19 @@ sudo systemctl enable --now auto-deploy
 sudo systemctl status auto-deploy
 ```
 
+`auto-deploy.service` 的 `ExecStart` 指向 `start.sh`，`deploy.sh` 最后会
+`systemctl restart auto-deploy` 来重启它，两者是配合关系。
+
 ### 4. 配置 GitHub Webhook
 
 1. 打开 GitHub 仓库 → **Settings** → **Webhooks** → **Add webhook**
 2. **Payload URL**：`http://<服务器公网IP或域名>:5000/webhook`
 3. **Content type**：`application/json`
-4. **Secret**：填入和服务端相同的密钥
+4. **Secret**：填入和第 2 步相同的密钥
 5. **Events**：勾选 **Just the push event**
 6. **Add webhook**
 
 ### 5. 后续使用
-
-本地修改后直接推送即可自动部署：
 
 ```bash
 git add . && git commit -m "更新内容" && git push origin master
@@ -273,17 +292,29 @@ git add . && git commit -m "更新内容" && git push origin master
 
 服务器会在几秒内自动拉取代码、更新依赖、重启服务。
 
-### 项目结构（自动部署后）
+### 6. 排查
+
+| 现象 | 原因 |
+|---|---|
+| `503 webhook secret not configured` | 服务器没读到 `WEBHOOK_SECRET`，检查第 2 步的 drop-in，然后 `daemon-reload` 并重启服务 |
+| `403 invalid signature` | GitHub 与服务器的密钥不一致，或密钥里混入了换行 |
+| 返回 200 但服务没重启 | 看 `deploy.log`。`sudo` 在 `NoNewPrivileges=yes` 下可能被拒，需为该用户在 sudoers 放行 `systemctl restart auto-deploy` |
+| 服务器报 non-fast-forward | 服务器工作区有本地提交，`git pull` 无法快进。服务器上请保持只读 |
+
+`deploy.sh` 的输出会追加到项目根目录的 `deploy.log`（已被 `.gitignore` 忽略），
+以前它被丢进 `/dev/null`，出问题时完全无迹可循。
+
+### 部署后的目录结构
 
 ```
 .
-├── app.py
-├── static/
-├── deploy.sh            # 自动部署脚本
-├── auto-deploy.service  # systemd 服务文件
-├── requirements.txt
-├── start.sh
-├── start.bat
-└── data.db
+├── backend/                 # 后端（Flask）
+│   ├── api/deploy.py        # /webhook 接口：签名校验 + 触发部署
+│   ├── services/deploy.py   # 签名比较与脚本派生（不依赖请求上下文）
+│   └── ...
+├── frontend/                # 前端源码与构建产物
+├── deploy.sh                # 自动部署脚本（git pull + 重启服务）
+├── auto-deploy.service      # systemd 服务文件
+├── start.sh / start.bat     # 一键启动
+└── deploy.log               # 部署日志（运行时生成，不提交）
 ```
->>>>>>> efd365a1be0d9e96453e6f9465d8d299a7842ecd

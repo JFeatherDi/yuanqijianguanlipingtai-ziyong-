@@ -4,7 +4,7 @@
 """
 from __future__ import annotations
 
-from . import auth, components, records, stats, stock
+from . import auth, components, deploy, records, stats, stock
 
 BLUEPRINTS = (
     auth.bp,
@@ -12,6 +12,7 @@ BLUEPRINTS = (
     stock.bp,
     records.bp,
     stats.bp,
+    deploy.bp,
 )
 
 

@@ -2,10 +2,14 @@
 
 用法：python backend/tests/smoke.py  （跑完会删除临时数据库）
 """
+import hashlib
+import hmac
 import io
 import os
 import sys
 import tempfile
+import time
+from shutil import which
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -14,7 +18,24 @@ for suffix in ("", "-wal", "-shm"):
     if os.path.exists(TMP_DB + suffix):
         os.remove(TMP_DB + suffix)
 
+# 部署脚本必须指向临时脚本：否则签名合法的那个用例会真的执行仓库里的
+# deploy.sh，在开发机上跑起 git pull 和 systemctl restart。
+SMOKE_SECRET = "smoke-webhook-secret"
+SMOKE_SCRIPT = os.path.join(tempfile.gettempdir(), "components_smoke_deploy.sh")
+SMOKE_MARKER = os.path.join(tempfile.gettempdir(), "components_smoke_deploy.marker")
+SMOKE_LOG = os.path.join(tempfile.gettempdir(), "components_smoke_deploy.log")
+
+for path in (SMOKE_MARKER, SMOKE_LOG):
+    if os.path.exists(path):
+        os.remove(path)
+
+with open(SMOKE_SCRIPT, "w", encoding="utf-8") as script_file:
+    script_file.write(f'#!/usr/bin/env bash\ntouch "{SMOKE_MARKER}"\n')
+
 os.environ["APP_DB_PATH"] = TMP_DB
+os.environ["WEBHOOK_SECRET"] = SMOKE_SECRET
+os.environ["APP_DEPLOY_SCRIPT"] = SMOKE_SCRIPT
+os.environ["APP_DEPLOY_LOG"] = SMOKE_LOG
 
 from backend.app import create_app  # noqa: E402
 
@@ -147,6 +168,69 @@ check("接口响应不被缓存", client.get("/api/health").headers.get("Cache-C
 check("未知接口返回 404 JSON", client.get("/api/nope").status_code == 404)
 
 from backend.config import Config  # noqa: E402
+from backend.services import deploy as deploy_service  # noqa: E402
+
+# --- Webhook：签名校验与部署触发 ---
+# 该接口刻意不放在 /api 下（GitHub 的 Payload URL 已按 /webhook 配置），
+# 也不能要求登录：GitHub 不带会话 Cookie，鉴权完全靠 HMAC 签名。
+push_body = b'{"ref":"refs/heads/master"}'
+valid_sig = "sha256=" + hmac.new(SMOKE_SECRET.encode(), push_body, hashlib.sha256).hexdigest()
+push_headers = {"X-GitHub-Event": "push", "X-Hub-Signature-256": valid_sig}
+
+bad_sig = client.post(
+    "/webhook",
+    data=push_body,
+    headers={"X-GitHub-Event": "push", "X-Hub-Signature-256": "sha256=" + "0" * 64},
+)
+check("webhook 拒绝错误签名", bad_sig.status_code == 403, bad_sig.get_json())
+
+missing_sig = client.post("/webhook", data=push_body, headers={"X-GitHub-Event": "push"})
+check("webhook 拒绝缺失签名", missing_sig.status_code == 403)
+check("webhook 未登录即可访问（不返回 401）", missing_sig.status_code != 401)
+
+ignored = client.post(
+    "/webhook",
+    data=push_body,
+    headers={"X-GitHub-Event": "ping", "X-Hub-Signature-256": valid_sig},
+)
+check("webhook 忽略非 push 事件", ignored.get_json().get("msg") == "ignored event: ping")
+
+# 未配置密钥时必须拒绝：否则任何人都能触发一次部署
+Config.WEBHOOK_SECRET = ""
+check("未配置密钥时拒绝服务", client.post("/webhook", data=push_body, headers=push_headers).status_code == 503)
+Config.WEBHOOK_SECRET = SMOKE_SECRET
+
+# 真实执行依赖宿主有 bash（生产 Debian 有，开发机 Windows 通常没有）。
+# 先用替身替换 Popen 固定住调用契约，再在 bash 可用时补一次真实执行。
+spawned = []
+
+
+class FakePopen:
+    def __init__(self, args, **kwargs):
+        spawned.append((args, kwargs))
+
+
+real_popen = deploy_service.subprocess.Popen
+deploy_service.subprocess.Popen = FakePopen
+try:
+    triggered = client.post("/webhook", data=push_body, headers=push_headers)
+finally:
+    deploy_service.subprocess.Popen = real_popen
+
+check("合法推送返回触发成功", triggered.status_code == 200 and triggered.get_json()["ok"], triggered.get_json())
+check("派发的是部署脚本", [call[0] for call in spawned] == [["bash", SMOKE_SCRIPT]], spawned)
+check("部署输出写入日志文件", os.path.exists(SMOKE_LOG))
+
+if which("bash"):
+    if os.path.exists(SMOKE_MARKER):
+        os.remove(SMOKE_MARKER)
+    client.post("/webhook", data=push_body, headers=push_headers)
+    deadline = time.time() + 5
+    while not os.path.exists(SMOKE_MARKER) and time.time() < deadline:
+        time.sleep(0.05)
+    check("部署脚本真的被执行", os.path.exists(SMOKE_MARKER))
+else:
+    print("[SKIP] 本机没有 bash，跳过部署脚本的真实执行验证")
 
 if os.path.isfile(os.path.join(Config.STATIC_DIST, "index.html")):
     index = client.get("/")
@@ -170,6 +254,10 @@ if os.path.isfile(os.path.join(Config.STATIC_DIST, "index.html")):
 for suffix in ("", "-wal", "-shm"):
     if os.path.exists(TMP_DB + suffix):
         os.remove(TMP_DB + suffix)
+
+for path in (SMOKE_SCRIPT, SMOKE_MARKER, SMOKE_LOG):
+    if os.path.exists(path):
+        os.remove(path)
 
 print()
 if failures:
