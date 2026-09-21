@@ -204,6 +204,7 @@ A: 可以。`frontend/dist` 已提交，只需 Python。若修改了前端源码
 A: 设置环境变量 `APP_PORT=8000`，或修改 `backend/config.py` 的默认值。
 
 **Q: 如何备份数据？**
+<<<<<<< HEAD
 A: 复制 `backend/data.db` 即可（建议先停服务，或连同 `-wal` / `-shm` 一起复制）。
 
 **Q: 换了域名 / 端口，跨域报错？**
@@ -214,3 +215,75 @@ A: 把前端地址加入 `APP_CORS_ORIGINS`（逗号分隔）。
 - 默认账号密码内置，**正式部署请通过 `APP_USERNAME` / `APP_PASSWORD` / `APP_SECRET_KEY` 覆盖**
 - 服务监听 `0.0.0.0`，建议仅在内网或通过内网穿透使用，不要直接暴露公网
 - 如需 HTTPS，建议在穿透层或反向代理层处理
+=======
+A: 直接复制 `data.db` 文件即可。
+
+
+## 🔄 Git 推送自动部署（Debian 服务器）
+
+配置后，本地 `git push` → 服务器自动拉取代码并重启服务。
+
+### 1. 服务器初始安装
+
+```bash
+# 克隆项目到服务器
+git clone git@github.com:JFeatherDi/yuanqijianguanlipingtai-ziyong-.git ~/components
+cd ~/components
+bash start.sh    # 首次启动，创建 venv 和数据库
+```
+
+### 2. 配置 Webhook Secret
+
+在服务器上设置环境变量（与 GitHub Webhook 配置保持一致）：
+
+```bash
+# 生成随机密钥
+openssl rand -hex 32
+# 写入 systemd 服务环境
+sudo mkdir -p /etc/systemd/system/auto-deploy.service.d
+echo '[Service]
+Environment="WEBHOOK_SECRET=你的随机密钥"' | sudo tee /etc/systemd/system/auto-deploy.service.d/webhook.conf
+```
+
+### 3. 安装 systemd 服务
+
+```bash
+sudo cp ~/components/auto-deploy.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now auto-deploy
+sudo systemctl status auto-deploy
+```
+
+### 4. 配置 GitHub Webhook
+
+1. 打开 GitHub 仓库 → **Settings** → **Webhooks** → **Add webhook**
+2. **Payload URL**：`http://<服务器公网IP或域名>:5000/webhook`
+3. **Content type**：`application/json`
+4. **Secret**：填入和服务端相同的密钥
+5. **Events**：勾选 **Just the push event**
+6. **Add webhook**
+
+### 5. 后续使用
+
+本地修改后直接推送即可自动部署：
+
+```bash
+git add . && git commit -m "更新内容" && git push origin master
+```
+
+服务器会在几秒内自动拉取代码、更新依赖、重启服务。
+
+### 项目结构（自动部署后）
+
+```
+.
+├── app.py
+├── static/
+├── deploy.sh            # 自动部署脚本
+├── auto-deploy.service  # systemd 服务文件
+├── requirements.txt
+├── start.sh
+├── start.bat
+└── data.db
+```
+>>>>>>> efd365a1be0d9e96453e6f9465d8d299a7842ecd
