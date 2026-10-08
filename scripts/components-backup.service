@@ -1,0 +1,11 @@
+[Unit]
+Description=器件管理系统 - 数据库在线备份
+After=network.target
+
+[Service]
+Type=oneshot
+# WorkingDirectory 与脚本路径按实际部署位置修改（示例为 /opt/components）
+WorkingDirectory=/opt/components
+ExecStart=/usr/bin/python3 /opt/components/scripts/backup_db.py
+# 备份失败时 systemctl 列出失败状态，方便发现
+RemainAfterExit=no

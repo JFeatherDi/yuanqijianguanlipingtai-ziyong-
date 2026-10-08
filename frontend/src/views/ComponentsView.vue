@@ -12,12 +12,14 @@ import ComponentFormModal from '@/components/ComponentFormModal.vue'
 import { download } from '@/api/client'
 import { recordApi } from '@/api/endpoints'
 import { STATUS_META, stockStatus } from '@/domain/inventory'
+import { useAuthStore } from '@/stores/auth'
 import { useInventoryStore } from '@/stores/inventory'
 import { useRefreshSignal } from '@/composables/useRefresh'
 import { useToastStore } from '@/stores/toast'
 import { display, formatQuantity } from '@/utils/format'
 
 const inventory = useInventoryStore()
+const auth = useAuthStore()
 const toast = useToastStore()
 const refreshSignal = useRefreshSignal()
 
@@ -149,10 +151,12 @@ function labelOf(item) {
 
         <div class="toolbar__actions">
           <AppButton icon="download" @click="exportCsv">导出</AppButton>
-          <RouterLink :to="{ name: 'data' }">
-            <AppButton icon="upload">批量导入</AppButton>
-          </RouterLink>
-          <AppButton variant="primary" icon="plus" @click="openCreate">新增器件</AppButton>
+          <template v-if="auth.isAdmin">
+            <RouterLink :to="{ name: 'data' }">
+              <AppButton icon="upload">批量导入</AppButton>
+            </RouterLink>
+            <AppButton variant="primary" icon="plus" @click="openCreate">新增器件</AppButton>
+          </template>
         </div>
       </div>
     </PanelCard>
@@ -223,6 +227,7 @@ function labelOf(item) {
                     <AppButton size="sm" icon-only icon="arrow-up" variant="ghost" aria-label="出库" />
                   </RouterLink>
                   <AppButton
+                    v-if="auth.isAdmin"
                     size="sm"
                     icon-only
                     icon="edit"
@@ -231,6 +236,7 @@ function labelOf(item) {
                     @click="openEdit(item)"
                   />
                   <AppButton
+                    v-if="auth.isAdmin"
                     size="sm"
                     icon-only
                     icon="trash"

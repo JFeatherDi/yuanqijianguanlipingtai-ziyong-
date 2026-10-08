@@ -7,18 +7,19 @@ import io
 from flask import Blueprint, Response, jsonify, request
 
 from ..db import get_db, to_dicts
-from ..security import current_user, login_required
+from ..security import admin_required, current_user, login_required
 from ..services import importer
 from ..services.importer import ImportError_
 from ..services.inventory import TX_IMPORT, TX_INIT, apply_change
+from ..services.quantity import round6
 
 bp = Blueprint("records", __name__, url_prefix="/api/records")
 
 RECORD_SQL = """
-SELECT t.id, t.component_id, t.delta, t.type, t.operator, t.remark, t.created_at,
-       c.name, c.spec, c.unit
+SELECT t.id, t.component_id, t.delta, t.type, t.operator, t.remark, t.applicant, t.created_at,
+       IFNULL(c.name, '已删除') AS name, IFNULL(c.spec, '') AS spec, IFNULL(c.unit, '') AS unit
 FROM transactions t
-JOIN components c ON c.id = t.component_id
+LEFT JOIN components c ON c.id = t.component_id
 {where}
 ORDER BY t.id DESC
 LIMIT ? OFFSET ?
@@ -26,7 +27,7 @@ LIMIT ? OFFSET ?
 
 COUNT_SQL = """
 SELECT COUNT(*) AS total FROM transactions t
-JOIN components c ON c.id = t.component_id
+LEFT JOIN components c ON c.id = t.component_id
 {where}
 """
 
@@ -51,8 +52,12 @@ def _conditions():
 
     keyword = (request.args.get("q") or "").strip()
     if keyword:
-        clauses.append("(c.name LIKE ? OR c.spec LIKE ?)")
-        args.extend([f"%{keyword}%"] * 2)
+        # 关键词覆盖器件名、规格、操作人、申请人与备注，服务端过滤后分页
+        clauses.append(
+            "(c.name LIKE ? OR c.spec LIKE ? OR t.operator LIKE ? "
+            "OR t.applicant LIKE ? OR t.remark LIKE ?)"
+        )
+        args.extend([f"%{keyword}%"] * 5)
 
     return ("WHERE " + " AND ".join(clauses) if clauses else ""), args
 
@@ -104,7 +109,7 @@ def download_template():
 
 
 @bp.route("/import", methods=["POST"])
-@login_required
+@admin_required
 def import_file():
     upload = request.files.get("file")
     if upload is None:
@@ -149,7 +154,16 @@ def import_file():
                     ),
                 )
                 if item["stock"]:
-                    apply_change(db, cursor.lastrowid, item["stock"], TX_INIT, operator, "导入初始库存")
+                    # 导入数量按六位归整方案静默归整：表格里常出现
+                    # 0.30000000000004 这类浮点尾巴，直接拒绝会妨碍导入
+                    apply_change(
+                        db,
+                        cursor.lastrowid,
+                        round6(item["stock"]),
+                        TX_INIT,
+                        operator,
+                        "导入初始库存",
+                    )
             imported += 1
         db.commit()
     except Exception as exc:

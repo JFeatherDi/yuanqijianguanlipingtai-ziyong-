@@ -5,6 +5,7 @@ export const TX_LABELS = {
   in: '入库',
   out: '出库',
   import: '导入',
+  return: '归还',
 }
 
 export const TX_TONES = {
@@ -12,6 +13,7 @@ export const TX_TONES = {
   in: 'tag--ok',
   out: 'tag--warn',
   import: 'tag--ghost',
+  return: 'tag--blue',
 }
 
 export function txLabel(kind) {

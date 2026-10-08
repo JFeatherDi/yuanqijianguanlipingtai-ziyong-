@@ -1,0 +1,1 @@
+import{$ as e,H as t,dt as n}from"./index-DvQqgbZg.js";var r=Symbol(`app-refresh`);function i(){let t=n(0);return e(r,t),t}function a(){return t(r,n(0))}export{a as n,i as t};

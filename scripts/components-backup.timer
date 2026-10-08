@@ -1,0 +1,11 @@
+[Unit]
+Description=器件管理系统 - 每天 03:30 触发数据库备份
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+# 错过的定时（如关机期间）在下次开机后补跑一次
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

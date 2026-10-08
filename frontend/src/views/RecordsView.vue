@@ -15,6 +15,7 @@ const TYPE_OPTIONS = [
   { value: '', label: '全部类型' },
   { value: 'in', label: '入库' },
   { value: 'out', label: '出库' },
+  { value: 'return', label: '归还' },
   { value: 'init', label: '初始化' },
   { value: 'import', label: '导入' },
 ]
@@ -100,7 +101,7 @@ function exportCsv() {
         v-model="keyword"
         class="input input-search records__search"
         type="search"
-        placeholder="搜索器件名称或规格"
+        placeholder="搜索器件、操作人或申请人"
         aria-label="搜索记录"
       />
       <select v-model="type" class="select records__select" aria-label="按类型筛选">
@@ -111,7 +112,7 @@ function exportCsv() {
       <AppButton size="sm" icon="download" @click="exportCsv">导出清单</AppButton>
     </template>
 
-    <RecordTable :rows="rows" :loading="loading" />
+    <RecordTable :rows="rows" :loading="loading" applicant />
 
     <template #footer>
       <span class="records__total">

@@ -1,6 +1,7 @@
 /** 数值与日期格式化。列表、图表、导出共用同一套规则。 */
 
-const NUM_FMT = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 })
+// 与后端六位归整方案一致：数量最多显示 6 位小数，整数不带小数点
+const NUM_FMT = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 6 })
 
 /** 1234.5 -> "1,234.5"；整数不显示小数位。 */
 export function formatNumber(value) {
@@ -9,7 +10,7 @@ export function formatNumber(value) {
   return NUM_FMT.format(num)
 }
 
-/** 库存等可能出现长小数的场景：最多 2 位，绝不显示 "100.00"。 */
+/** 库存等可能出现长小数的场景：最多 6 位，绝不显示浮点尾巴。 */
 export function formatQuantity(value) {
   const num = Number(value)
   if (!Number.isFinite(num)) return '—'

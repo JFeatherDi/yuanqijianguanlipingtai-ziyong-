@@ -17,17 +17,20 @@ SELECT
     (SELECT COUNT(*) FROM components WHERE IFNULL(category, '') = '')  AS uncategorized,
     (SELECT COUNT(DISTINCT category) FROM components
       WHERE IFNULL(category, '') <> '')                                AS categories,
-    (SELECT IFNULL(SUM(stock), 0) FROM components)                     AS total_stock,
+    (SELECT ROUND(IFNULL(SUM(stock), 0), 6) FROM components)           AS total_stock,
     (SELECT COUNT(*) FROM components
       WHERE threshold > 0 AND stock <= threshold)                      AS low_count,
     (SELECT COUNT(*) FROM components
       WHERE threshold > 0 AND stock > threshold)                       AS healthy_count,
     (SELECT COUNT(*) FROM components WHERE threshold > 0)              AS guarded_count,
-    (SELECT IFNULL(SUM(delta), 0) FROM transactions WHERE delta > 0)   AS inbound_total,
-    (SELECT IFNULL(SUM(-delta), 0) FROM transactions WHERE delta < 0)  AS outbound_total,
+    (SELECT ROUND(IFNULL(SUM(delta), 0), 6) FROM transactions WHERE delta > 0)  AS inbound_total,
+    (SELECT ROUND(IFNULL(SUM(-delta), 0), 6) FROM transactions WHERE delta < 0) AS outbound_total,
     (SELECT COUNT(*) FROM transactions)                                AS total_ops,
     (SELECT COUNT(*) FROM transactions WHERE created_at >= :since)     AS recent_ops,
-    (SELECT COUNT(*) FROM transactions WHERE created_at >= :today)     AS today_ops
+    (SELECT COUNT(*) FROM transactions WHERE created_at >= :today)     AS today_ops,
+    (SELECT COUNT(DISTINCT root_id) FROM custody_positions
+      WHERE due_date IS NOT NULL AND due_date < :today
+        AND ROUND(qty, 6) > 0)                                          AS overdue_count
 """
 
 # 注意：components 表本身就有 name 列，所以 GROUP BY 必须写完整表达式。

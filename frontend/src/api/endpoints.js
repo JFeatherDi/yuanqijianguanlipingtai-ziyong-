@@ -28,6 +28,22 @@ export const stockApi = {
   outbound: (payload) => http.post(`${BASE}/stock/out`, payload),
 }
 
+export const custodyApi = {
+  // 服务端筛选 + 分页：q 匹配器件名、规格与所有历任持有人
+  list: (query) => http.get(`${BASE}/custody`, { query }),
+  records: (rootId) => http.get(`${BASE}/custody/${rootId}/records`),
+  positions: (query) => http.get(`${BASE}/custody/positions`, { query }),
+  transfer: (payload) => http.post(`${BASE}/custody/transfer`, payload),
+  giveBack: (payload) => http.post(`${BASE}/custody/return`, payload),
+}
+
+export const userApi = {
+  list: () => http.get(`${BASE}/users`),
+  create: (payload) => http.post(`${BASE}/users`, payload),
+  setPassword: (id, payload) => http.put(`${BASE}/users/${id}/password`, payload),
+  remove: (id) => http.delete(`${BASE}/users/${id}`),
+}
+
 export const recordApi = {
   list: (query) => http.get(`${BASE}/records`, { query }),
   upload: (file) => {

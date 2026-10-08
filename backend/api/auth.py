@@ -38,28 +38,46 @@ def captcha_image():
 
 @bp.route("/login", methods=["POST"])
 def login():
-    allowed, remain = check_login_limit()
-    if not allowed:
-        # 这一层不消费验证码：锁定结束后用户手上的那张还能用
-        return jsonify({"ok": False, "msg": f"登录失败次数过多，请 {remain} 秒后再试"}), 429
-
     payload = request.get_json(silent=True) or {}
     username = (payload.get("username") or "").strip()
     password = (payload.get("password") or "").strip()
 
+    # 双维度限流：同一 IP 或同一账号任一超限即拒绝（账号维度防换 IP 定向爆破）
+    allowed, remain = check_login_limit(username)
+    if not allowed:
+        # 这一层不消费验证码：锁定结束后用户手上的那张还能用
+        return jsonify({"ok": False, "msg": f"登录失败次数过多，请 {remain} 秒后再试"}), 429
+
     # 先验验证码再比密码：无论对错都把这张验证码作废，客户端需要换一张
     if not captcha.verify(payload.get("captcha") or ""):
-        record_login_failure()
+        record_login_failure(username)
         return jsonify({"ok": False, "msg": CAPTCHA_FAILED_MSG, "captcha": True}), 400
 
-    if username == Config.USERNAME and password == Config.PASSWORD:
-        clear_login_failures()
-        session.permanent = True
-        session["user"] = username
-        session["login_at"] = time.time()
-        return jsonify({"ok": True, "user": username})
+    session.permanent = True
+    session["login_at"] = time.time()
 
-    record_login_failure()
+    # 管理员账号来自环境变量；其余账号查 users 表
+    if username == Config.USERNAME and password == Config.PASSWORD:
+        session["user"] = username
+        session["role"] = "admin"
+        clear_login_failures(username)
+        return jsonify({"ok": True, "user": username, "role": "admin"})
+
+    from ..db import get_db
+    from ..services import users as user_service
+
+    row = user_service.verify_user(get_db(), username, password)
+    if row is not None:
+        session["user"] = row["username"]
+        session["role"] = "member"
+        session["uid"] = row["id"]
+        session["ver"] = row["pw_version"]
+        clear_login_failures(username)
+        return jsonify({"ok": True, "user": row["username"], "role": "member"})
+
+    # 登录失败要清掉刚写入的会话字段，避免残留半个会话
+    session.clear()
+    record_login_failure(username)
     return jsonify({"ok": False, "msg": "账号或密码错误"}), 401
 
 
@@ -72,4 +90,6 @@ def logout():
 @bp.route("/me")
 @login_required
 def me():
-    return jsonify({"ok": True, "user": session.get("user")})
+    return jsonify(
+        {"ok": True, "user": session.get("user"), "role": session.get("role", "member")}
+    )

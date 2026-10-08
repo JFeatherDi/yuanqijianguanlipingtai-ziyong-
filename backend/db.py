@@ -34,8 +34,41 @@ CREATE TABLE IF NOT EXISTS transactions (
     type         TEXT NOT NULL,
     operator     TEXT,
     remark       TEXT,
+    applicant    TEXT NOT NULL DEFAULT '',
     created_at   TEXT NOT NULL,
     FOREIGN KEY(component_id) REFERENCES components(id)
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    username      TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    pw_version    INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS custody_positions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    component_id INTEGER NOT NULL,
+    root_id      INTEGER NOT NULL,
+    parent_id    INTEGER,
+    holder       TEXT NOT NULL,
+    qty          REAL NOT NULL,
+    operator     TEXT NOT NULL DEFAULT '',
+    remark       TEXT,
+    due_date     TEXT,
+    created_at   TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS custody_returns (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    position_id  INTEGER NOT NULL,
+    root_id      INTEGER NOT NULL,
+    component_id INTEGER NOT NULL,
+    qty          REAL NOT NULL,
+    operator     TEXT NOT NULL DEFAULT '',
+    remark       TEXT,
+    created_at   TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_comp_name     ON components(name);
@@ -43,6 +76,10 @@ CREATE INDEX IF NOT EXISTS idx_comp_category ON components(category);
 CREATE INDEX IF NOT EXISTS idx_txn_comp      ON transactions(component_id);
 CREATE INDEX IF NOT EXISTS idx_txn_created   ON transactions(created_at);
 CREATE INDEX IF NOT EXISTS idx_txn_type      ON transactions(type);
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_custody_pos_root ON custody_positions(root_id);
+CREATE INDEX IF NOT EXISTS idx_custody_pos_component ON custody_positions(component_id);
+CREATE INDEX IF NOT EXISTS idx_custody_ret_root ON custody_returns(root_id);
 """
 
 
@@ -73,10 +110,25 @@ def close_db(_exc=None):
 
 
 def init_db():
-    """建表 + 建索引，幂等。"""
+    """建表 + 建索引 + 旧库补列，幂等。
+
+    旧数据库（早于申请人字段）通过 PRAGMA 检测后自动 ALTER TABLE，
+    历史流水的申请人保持为空字符串，前端显示为「—」。
+    """
     conn = connect()
     try:
         conn.executescript(SCHEMA)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(transactions)")}
+        if "applicant" not in columns:
+            conn.execute(
+                "ALTER TABLE transactions ADD COLUMN applicant TEXT NOT NULL DEFAULT ''"
+            )
+        pos_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(custody_positions)")
+        }
+        if "due_date" not in pos_columns:
+            # 旧库补「预计归还日期」：历史持有点为空 = 未约定，不影响既有数据
+            conn.execute("ALTER TABLE custody_positions ADD COLUMN due_date TEXT")
         conn.commit()
     finally:
         conn.close()

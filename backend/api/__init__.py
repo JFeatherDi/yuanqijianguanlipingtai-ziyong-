@@ -4,15 +4,17 @@
 """
 from __future__ import annotations
 
-from . import auth, components, deploy, records, stats, stock
+from . import auth, components, custody, deploy, records, stats, stock, users
 
 BLUEPRINTS = (
     auth.bp,
     components.bp,
     stock.bp,
+    custody.bp,
     records.bp,
     stats.bp,
     deploy.bp,
+    users.bp,
 )
 
 

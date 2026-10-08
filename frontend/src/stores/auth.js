@@ -4,10 +4,12 @@ import { authApi } from '@/api/endpoints'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref('')
+  const role = ref('member')
   const ready = ref(false)
   const pending = ref(false)
 
   const isAuthenticated = computed(() => Boolean(user.value))
+  const isAdmin = computed(() => role.value === 'admin')
   const initial = computed(() => (user.value ? user.value.charAt(0).toUpperCase() : '?'))
 
   /** 用一次性会话探测决定初始路由，避免刷新时闪一下登录页。 */
@@ -15,8 +17,10 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const res = await authApi.me()
       user.value = res.user ?? ''
+      role.value = res.role ?? 'member'
     } catch {
       user.value = ''
+      role.value = 'member'
     } finally {
       ready.value = true
     }
@@ -28,6 +32,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const res = await authApi.login({ username, password, captcha })
       user.value = res.user ?? username
+      role.value = res.role ?? 'member'
       return res
     } finally {
       pending.value = false
@@ -44,7 +49,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   function clear() {
     user.value = ''
+    role.value = 'member'
   }
 
-  return { user, ready, pending, isAuthenticated, initial, loadSession, login, logout, clear }
+  return { user, role, ready, pending, isAuthenticated, isAdmin, initial, loadSession, login, logout, clear }
 })

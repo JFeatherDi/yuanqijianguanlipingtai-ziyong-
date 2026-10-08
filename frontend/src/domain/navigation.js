@@ -25,6 +25,7 @@ export const NAV_ITEMS = [
     children: [
       { id: 'stock-in', label: '入库登记', to: { name: 'stock-in' } },
       { id: 'stock-out', label: '出库领用', to: { name: 'stock-out' } },
+      { id: 'stock-custody', label: '器件流转', to: { name: 'custody' } },
     ],
   },
   {

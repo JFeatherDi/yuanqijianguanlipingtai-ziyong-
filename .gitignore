@@ -25,8 +25,19 @@ frontend/node_modules/
 .DS_Store
 *.log
 
+# ---------- 本地构建临时 ----------
+npm-cache/
+pkgfix/
+backend/backups/
+backend/secret_key
+
 # ---------- 编辑器 / IDE ----------
 .vscode/
 .idea/
 *.swp
 .cursor/
+# 本地运行环境与启动状态
+.env
+.env.*
+logs/
+.secret_key.shipped

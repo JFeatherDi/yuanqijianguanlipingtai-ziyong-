@@ -44,6 +44,12 @@ const routes = [
         meta: { title: '出库领用' },
       },
       {
+        path: 'custody',
+        name: 'custody',
+        component: () => import('@/views/CustodyView.vue'),
+        meta: { title: '器件流转' },
+      },
+      {
         path: 'records',
         name: 'records',
         component: () => import('@/views/RecordsView.vue'),
@@ -53,7 +59,7 @@ const routes = [
         path: 'data',
         name: 'data',
         component: () => import('@/views/DataView.vue'),
-        meta: { title: '数据管理' },
+        meta: { title: '数据管理', requiresAdmin: true },
       },
       {
         path: 'settings',
@@ -82,6 +88,10 @@ router.beforeEach(async (to) => {
   }
   if (!auth.isAuthenticated) {
     return { name: 'login', query: to.fullPath === '/' ? {} : { redirect: to.fullPath } }
+  }
+  // 数据管理等管理页仅管理员可进入，普通用户重定向回主页
+  if (to.meta.requiresAdmin && !auth.isAdmin) {
+    return { name: 'dashboard' }
   }
   return true
 })

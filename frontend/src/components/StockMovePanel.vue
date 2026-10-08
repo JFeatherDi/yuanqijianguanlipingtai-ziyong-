@@ -42,6 +42,8 @@ const COPY = {
     qtyLabel: '出库数量',
     qtyPlaceholder: '输入本次出库数量',
     hints: [1, 2, 5, 10],
+    applicantLabel: '申请人（领用人）',
+    applicantPlaceholder: '例如：张三 / 课题组名',
   },
 }
 
@@ -54,9 +56,15 @@ const refreshSignal = useRefreshSignal()
 const selectedId = ref(null)
 const quantity = ref('')
 const remark = ref('')
+const applicant = ref('')
+/** 出库可选的预计归还日期（YYYY-MM-DD）；空 = 不约定 */
+const dueDate = ref('')
 const submitting = ref(false)
 const records = ref([])
 const recordsLoading = ref(false)
+
+/** 原生日期选择器的下限：约定日期不能是过去 */
+const todayStr = new Date().toLocaleDateString('sv-SE')
 
 const selected = computed(() =>
   selectedId.value ? inventory.byId(selectedId.value) : null,
@@ -71,8 +79,17 @@ const overLimit = computed(
   () => props.mode === 'out' && Number(quantity.value) > available.value,
 )
 
+/** 出库申请人必填：器件流转链的初始持有人就是他。 */
+const applicantMissing = computed(
+  () => props.mode === 'out' && !applicant.value.trim(),
+)
+
 const canSubmit = computed(
-  () => Boolean(selected.value) && Number(quantity.value) > 0 && !overLimit.value,
+  () =>
+    Boolean(selected.value) &&
+    Number(quantity.value) > 0 &&
+    !overLimit.value &&
+    !applicantMissing.value,
 )
 
 async function loadRecords() {
@@ -115,12 +132,18 @@ async function submit() {
       qty: Number(quantity.value),
       remark: remark.value.trim(),
     }
+    if (props.mode === 'out') {
+      payload.applicant = applicant.value.trim()
+      if (dueDate.value) payload.due_date = dueDate.value
+    }
     const res =
       props.mode === 'in' ? await stockApi.inbound(payload) : await stockApi.outbound(payload)
 
     toast.success(`${copy.value.verb}成功，${selected.value.name} 当前库存 ${formatQuantity(res.stock)}`)
     quantity.value = ''
     remark.value = ''
+    applicant.value = ''
+    dueDate.value = ''
     await Promise.all([inventory.load({ silent: true }), loadRecords()])
   } catch (error) {
     toast.error(error.message)
@@ -226,6 +249,35 @@ async function submit() {
             </p>
           </div>
 
+          <div v-if="props.mode === 'out'" class="field">
+            <label class="field__label" for="move-applicant">
+              {{ copy.applicantLabel }} <span class="req">*</span>
+            </label>
+            <input
+              id="move-applicant"
+              v-model="applicant"
+              class="input"
+              maxlength="120"
+              :placeholder="copy.applicantPlaceholder"
+              :class="{ 'input--invalid': applicantMissing && applicant !== '' }"
+              :disabled="!selected"
+            />
+            <p v-if="applicantMissing" class="field__error">出库必须填写申请人，他将作为流转链的初始持有人</p>
+          </div>
+
+          <div v-if="props.mode === 'out'" class="field">
+            <label class="field__label" for="move-due-date">预计归还日期</label>
+            <input
+              id="move-due-date"
+              v-model="dueDate"
+              class="input"
+              type="date"
+              :min="todayStr"
+              :disabled="!selected"
+            />
+            <p class="field__hint">选填。约定后可在流转页跟踪逾期情况，转交时自动沿用</p>
+          </div>
+
           <div class="field">
             <label class="field__label" for="move-remark">备注</label>
             <input
@@ -259,6 +311,7 @@ async function submit() {
         :rows="records"
         :loading="recordsLoading"
         compact
+        :applicant="props.mode === 'out'"
         :empty-title="`还没有${copy.verb}记录`"
         :empty-desc="`完成一次${copy.verb}后，记录会自动出现在这里。`"
       />

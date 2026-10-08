@@ -92,7 +92,11 @@ const stats = computed(() => {
       caption: '累计出入库次数',
       metrics: [
         { label: '今日', value: formatQuantity(data.today_ops) },
-        { label: '近 24 小时', value: formatQuantity(data.recent_ops) },
+        {
+          label: '逾期未还',
+          value: formatQuantity(data.overdue_count ?? 0),
+          tone: (data.overdue_count ?? 0) > 0 ? 'danger' : undefined,
+        },
       ],
     },
   ]
@@ -242,6 +246,13 @@ function alertLabel(item) {
     <PanelCard title="库存预警清单" flush>
       <template #tools>
         <span class="tag tag--warn">{{ inventory.lowCount }} 项待处理</span>
+        <RouterLink
+          class="dash__more"
+          :class="{ 'dash__more--danger': (overview?.overdue_count ?? 0) > 0 }"
+          :to="{ name: 'custody', query: { overdue: 1 } }"
+        >
+          逾期未还 {{ formatQuantity(overview?.overdue_count ?? 0) }}
+        </RouterLink>
         <RouterLink class="dash__more" :to="{ name: 'alerts' }">查看全部</RouterLink>
       </template>
       <div class="table-wrap">
@@ -318,6 +329,10 @@ function alertLabel(item) {
 .dash__more {
   font-size: var(--fs-xs);
   color: var(--c-primary);
+}
+
+.dash__more--danger {
+  color: var(--c-danger);
 }
 
 .dash__donut {

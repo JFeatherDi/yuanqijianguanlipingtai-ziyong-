@@ -6,9 +6,10 @@ import sqlite3
 from flask import Blueprint, jsonify, request
 
 from ..db import get_db, to_dicts
-from ..security import current_user, login_required
-from ..services import catalog
-from ..services.inventory import TX_INIT, apply_change
+from ..security import admin_required, current_user, login_required
+from ..services import catalog, custody
+from ..services.inventory import TX_INIT, TX_IMPORT, apply_change
+from ..services.quantity import nonnegative_quantity, round6
 
 bp = Blueprint("components", __name__, url_prefix="/api/components")
 
@@ -49,7 +50,7 @@ def list_components():
 
 
 @bp.route("", methods=["POST"])
-@login_required
+@admin_required
 def create_component():
     db = get_db()
     payload = request.get_json(silent=True) or {}
@@ -58,6 +59,12 @@ def create_component():
     error = catalog.validate(fields)
     if error:
         return jsonify({"ok": False, "msg": error}), 400
+
+    try:
+        # 初始库存与出入库同一套精度规则：非负、最多六位小数
+        opening = nonnegative_quantity(payload.get("stock"), "初始库存")
+    except ValueError as exc:
+        return jsonify({"ok": False, "msg": str(exc)}), 400
 
     try:
         cursor = db.execute(
@@ -75,7 +82,6 @@ def create_component():
         )
         component_id = cursor.lastrowid
 
-        opening = catalog.initial_stock(payload)
         if opening:
             apply_change(db, component_id, opening, TX_INIT, current_user(), "新建初始库存")
 
@@ -87,13 +93,13 @@ def create_component():
 
 
 @bp.route("/<int:component_id>", methods=["PUT"])
-@login_required
+@admin_required
 def update_component(component_id):
     db = get_db()
     changes = catalog.pick_changes(request.get_json(silent=True))
 
     if "threshold" in changes:
-        changes["threshold"] = catalog.to_number(changes["threshold"])
+        changes["threshold"] = round6(catalog.to_number(changes["threshold"]))
     if "name" in changes:
         changes["name"] = catalog.to_text(changes["name"])
         if not changes["name"]:
@@ -120,9 +126,14 @@ def update_component(component_id):
 
 
 @bp.route("/<int:component_id>", methods=["DELETE"])
-@login_required
+@admin_required
 def delete_component(component_id):
     db = get_db()
+
+    # 有流转历史的器件禁止删除：领用链、转交与归还记录是追踪凭证
+    if custody.has_history(db, component_id):
+        return jsonify({"ok": False, "msg": "该器件存在流转记录，禁止删除"}), 400
+
     db.execute("DELETE FROM transactions WHERE component_id = ?", (component_id,))
     db.execute("DELETE FROM components WHERE id = ?", (component_id,))
     db.commit()

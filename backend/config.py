@@ -25,18 +25,52 @@ DEFAULT_DIST_DIR = os.path.join(PROJECT_DIR, "frontend", "dist")
 DEFAULT_DEPLOY_SCRIPT = os.path.join(PROJECT_DIR, "deploy.sh")
 DEFAULT_DEPLOY_LOG = os.path.join(PROJECT_DIR, "deploy.log")
 
+SECRET_KEY_FILE = os.path.join(BACKEND_DIR, "secret_key")
+
+
+def _load_secret_key():
+    """会话签名密钥：优先环境变量，否则首次启动随机生成并落盘复用。
+
+    绝不回退到写死在代码里的默认值——那等于把「伪造管理员会话」的能力
+    交给所有见过源码的人。落盘是为了重启后密钥不变、已有会话不掉线；
+    若目录只读导致无法落盘，则退化为进程内随机密钥（重启会全员下线，
+    但好过固定弱密钥）。
+    """
+    explicit = os.environ.get("APP_SECRET_KEY", "").strip()
+    if explicit:
+        return explicit
+    try:
+        with open(SECRET_KEY_FILE, "r", encoding="utf-8") as fh:
+            stored = fh.read().strip()
+        if stored:
+            return stored
+    except OSError:
+        pass
+    import secrets
+
+    generated = secrets.token_hex(32)
+    try:
+        fd = os.open(SECRET_KEY_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(generated)
+        os.chmod(SECRET_KEY_FILE, 0o600)
+    except OSError:
+        pass
+    return generated
+
 
 class Config:
     """应用配置。类属性即配置项，Flask 以 from_object 方式加载。"""
 
     # ---- 鉴权 ----
-    SECRET_KEY = _env("APP_SECRET_KEY", "swust-lab-components-2026")
+    SECRET_KEY = _load_secret_key()
     USERNAME = _env("APP_USERNAME", "IOTAT")
     PASSWORD = _env("APP_PASSWORD", "swust350351")
     SESSION_LIFETIME_HOURS = _env("APP_SESSION_HOURS", 12, int)
 
-    # ---- 登录限流 ----
-    LOGIN_MAX_FAIL = _env("APP_LOGIN_MAX_FAIL", 5, int)
+    # ---- 登录限流（IP 与账号双维度，任一超限即锁定）----
+    LOGIN_MAX_FAIL = _env("APP_LOGIN_MAX_FAIL", 10, int)
+    LOGIN_MAX_FAIL_PER_USER = _env("APP_LOGIN_MAX_FAIL_PER_USER", 5, int)
     LOGIN_LOCK_SECONDS = _env("APP_LOGIN_LOCK_SECONDS", 300, int)
 
     # ---- 数据库 ----
