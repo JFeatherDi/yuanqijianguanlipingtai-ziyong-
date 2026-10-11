@@ -10,17 +10,18 @@ import io
 
 from openpyxl import load_workbook
 
-from .catalog import normalize, to_number
+from .catalog import normalize
 
 # 表头别名 -> 内部字段名。列名匹配大小写不敏感，兼容中英文表头
 COLUMN_ALIASES = {
-    "name": ("name", "名称", "器件", "器件名称", "物料名称", "品名"),
+    "name": ("name", "名称", "设备名称", "器件", "器件名称", "物料名称", "品名"),
+    "asset_no": ("asset_no", "设备固定资产编号", "固定资产编号", "资产编号", "设备编号"),
     "category": ("category", "分类", "类别", "类型"),
-    "spec": ("spec", "规格", "型号", "规格型号"),
+    "spec": ("spec", "规格", "型号", "设备型号", "规格型号"),
     "unit": ("unit", "单位"),
     "location": ("location", "位置", "存放位置", "库位", "货位"),
-    "stock": ("stock", "数量", "库存", "当前数量", "当前库存"),
-    "threshold": ("threshold", "阈值", "预警值", "下限", "安全库存"),
+    "owner": ("owner", "负责人", "设备负责人", "责任人"),
+    "equipment_status": ("status", "maintenance", "维修状态", "设备状态", "当前状态", "是否维修"),
     "remark": ("remark", "备注", "说明"),
 }
 
@@ -97,21 +98,24 @@ def extract_items(rows):
     for row in rows[1:] if has_header else rows:
         if not row or all(value is None or str(value).strip() == "" for value in row):
             continue
+        raw_status = _cell(row, column_map, "equipment_status")
         fields = normalize(
             {
                 "name": _cell(row, column_map, "name"),
+                "asset_no": _cell(row, column_map, "asset_no"),
                 "category": _cell(row, column_map, "category"),
                 "spec": _cell(row, column_map, "spec"),
                 "unit": _cell(row, column_map, "unit"),
                 "location": _cell(row, column_map, "location"),
-                "threshold": _cell(row, column_map, "threshold", "0"),
+                "owner": _cell(row, column_map, "owner"),
+                "maintenance": raw_status,
+                "unavailable": raw_status in {"不可借", "不可借用", "停用"},
                 "remark": _cell(row, column_map, "remark"),
             }
         )
         if not fields["name"]:
             skipped += 1
             continue
-        fields["stock"] = to_number(_cell(row, column_map, "stock", "0"))
         items.append(fields)
 
     return items, skipped

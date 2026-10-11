@@ -12,6 +12,8 @@ services/quantity.py 的入口校验，避免二进制浮点残量（0.3-0.1 问
 """
 from __future__ import annotations
 
+import re
+
 from .inventory import TX_RETURN, apply_change, now_str
 from .quantity import positive_quantity
 
@@ -25,6 +27,8 @@ class CustodyError(Exception):
 
 
 HOLDER_MAX = 120
+CONTACT_MAX = 25
+PHONE_PATTERN = re.compile(r"^\+?[0-9][0-9()\-\s]{5,24}$")
 
 
 def _check_holder(holder) -> str:
@@ -34,6 +38,18 @@ def _check_holder(holder) -> str:
     if len(holder) > HOLDER_MAX:
         raise CustodyError(f"持有人不能超过 {HOLDER_MAX} 个字符")
     return holder
+
+
+def normalize_phone(value) -> str:
+    """校验借用/转借联系电话，只接受手机号或座机号。"""
+    contact = (value or "").strip()
+    if not contact:
+        raise CustodyError("请填写借用联系方式")
+    if len(contact) > CONTACT_MAX:
+        raise CustodyError(f"电话号码不能超过 {CONTACT_MAX} 个字符")
+    if not PHONE_PATTERN.fullmatch(contact) or len(re.sub(r"\D", "", contact)) < 7:
+        raise CustodyError("请输入正确的电话号码")
+    return contact
 
 
 def normalize_due_date(value):
@@ -69,13 +85,14 @@ def overdue_days(due_date, today=None):
     return delta if delta > 0 else None
 
 
-def create_chain(db, component_id, holder, qty, operator, remark="", due_date=None):
+def create_chain(db, component_id, holder, contact, qty, operator, remark="", due_date=None):
     """新出库形成独立领用链。qty 已由出库入口校验，这里直接落库。"""
+    contact = normalize_phone(contact)
     cursor = db.execute(
         "INSERT INTO custody_positions "
-        "(component_id, root_id, parent_id, holder, qty, operator, remark, due_date, created_at) "
-        "VALUES (?, 0, NULL, ?, ?, ?, ?, ?, ?)",
-        (component_id, holder, qty, operator, remark or "", due_date, now_str()),
+        "(component_id, root_id, parent_id, holder, contact, qty, operator, remark, due_date, created_at) "
+        "VALUES (?, 0, NULL, ?, ?, ?, ?, ?, ?, ?)",
+        (component_id, holder, contact, qty, operator, remark or "", due_date, now_str()),
     )
     position_id = cursor.lastrowid
     db.execute(
@@ -90,15 +107,16 @@ def get_position(db, position_id):
     ).fetchone()
 
 
-def transfer(db, position_id, holder, qty, operator, remark="", due_date=None):
-    """从某个持有节点转交给新持有人。数量非法或超量时抛 CustodyError。
+def transfer(db, position_id, holder, contact, qty, operator, remark="", due_date=None):
+    """从某个持有节点转借给新借用人。数量非法或超量时抛 CustodyError。
 
     due_date 缺省时继承原持有点的约定日期（器件在谁手里，约定跟到谁）；
     显式传入新日期则覆盖。原节点已全部转出仍保留在链上作为路径记录。
     原子性：持有量扣减的 WHERE 带上 ROUND 比较，并发下不会扣成负数。
     """
     holder = _check_holder(holder)
-    qty = positive_quantity(qty, "转交数量")
+    contact = normalize_phone(contact)
+    qty = positive_quantity(qty, "转借数量")
 
     position = get_position(db, position_id)
     if position is None:
@@ -116,18 +134,19 @@ def transfer(db, position_id, holder, qty, operator, remark="", due_date=None):
             (position_id,),
         ).fetchone()
         raise CustodyError(
-            f"转交数量超过当前持有量 {remaining['qty'] if remaining else 0}"
+            f"转借数量超过当前持有量 {remaining['qty'] if remaining else 0}"
         )
 
     cursor = db.execute(
         "INSERT INTO custody_positions "
-        "(component_id, root_id, parent_id, holder, qty, operator, remark, due_date, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "(component_id, root_id, parent_id, holder, contact, qty, operator, remark, due_date, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             position["component_id"],
             position["root_id"],
             position_id,
             holder,
+            contact,
             qty,
             operator,
             remark or "",
@@ -138,7 +157,7 @@ def transfer(db, position_id, holder, qty, operator, remark="", due_date=None):
     return {"position_id": cursor.lastrowid, "root_id": position["root_id"], "qty": qty}
 
 
-def give_back(db, position_id, qty, operator, remark=""):
+def give_back(db, position_id, qty, operator, remark="", returned_at=None):
     """从某个持有节点归还到仓库。返回更新后的库存。"""
     qty = positive_quantity(qty, "归还数量")
 
@@ -160,6 +179,7 @@ def give_back(db, position_id, qty, operator, remark=""):
             f"归还数量超过当前持有量 {remaining['qty'] if remaining else 0}"
         )
 
+    returned_at = returned_at or now_str()
     db.execute(
         "INSERT INTO custody_returns "
         "(position_id, root_id, component_id, qty, operator, remark, created_at) "
@@ -171,7 +191,7 @@ def give_back(db, position_id, qty, operator, remark=""):
             qty,
             operator,
             remark or "",
-            now_str(),
+            returned_at,
         ),
     )
     # 归还增加仓库库存，并写一条 return 类型流水，账实同步
@@ -204,7 +224,7 @@ def open_positions(db, component_id=None, keyword=""):
 def chain_events(db, root_id):
     """一条链的完整时间线：初始领用 + 历次转交 + 历次归还。"""
     positions = db.execute(
-        "SELECT id, parent_id, holder, qty, operator, remark, due_date, created_at "
+        "SELECT id, parent_id, holder, contact, qty, operator, remark, due_date, created_at "
         "FROM custody_positions WHERE root_id = ? ORDER BY id",
         (root_id,),
     ).fetchall()
@@ -213,7 +233,7 @@ def chain_events(db, root_id):
 
     returns = db.execute(
         "SELECT cr.id, cr.position_id, cr.qty, cr.operator, cr.remark, cr.created_at, "
-        "       cp.holder "
+        "       cp.holder, cp.contact "
         "FROM custody_returns cr "
         "JOIN custody_positions cp ON cp.id = cr.position_id "
         "WHERE cr.root_id = ? ORDER BY cr.id",
@@ -221,6 +241,7 @@ def chain_events(db, root_id):
     ).fetchall()
 
     events = []
+    holders_by_id = {row["id"]: row["holder"] for row in positions}
     for row in positions:
         kind = "out" if row["parent_id"] is None else "transfer"
         events.append(
@@ -228,6 +249,8 @@ def chain_events(db, root_id):
                 "id": row["id"],
                 "kind": kind,
                 "holder": row["holder"],
+                "contact": row["contact"],
+                "handler": holders_by_id.get(row["parent_id"]),
                 "qty": row["qty"],
                 "operator": row["operator"],
                 "remark": row["remark"],
@@ -241,6 +264,7 @@ def chain_events(db, root_id):
                 "id": f"r{row['id']}",
                 "kind": "return",
                 "holder": row["holder"],
+                "contact": row["contact"],
                 "qty": row["qty"],
                 "operator": row["operator"],
                 "remark": row["remark"],

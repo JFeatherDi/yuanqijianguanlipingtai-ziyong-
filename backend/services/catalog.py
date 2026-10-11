@@ -7,15 +7,22 @@ from __future__ import annotations
 # 可写字段的唯一定义处 —— 新增字段只需在这里登记
 EDITABLE_FIELDS = (
     "name",
+    "asset_no",
+    "image_data",
     "category",
     "spec",
     "unit",
     "location",
+    "owner",
+    "maintenance",
+    "unavailable",
     "threshold",
     "remark",
 )
 
 DEFAULT_UNIT = "个"
+MAX_IMAGE_DATA_LENGTH = 2_000_000
+IMAGE_PREFIXES = ("data:image/jpeg;base64,", "data:image/png;base64,", "data:image/webp;base64,")
 
 
 def to_text(value):
@@ -31,15 +38,31 @@ def to_number(value, default=0.0):
         return default
 
 
+def to_flag(value):
+    """把表单、JSON 与导入表格中的常见布尔值统一为 0/1。"""
+    if isinstance(value, bool):
+        return int(value)
+    return 1 if to_text(value).lower() in {
+        "1", "true", "yes", "是", "维修", "维修中", "维护", "维护中"
+    } else 0
+
+
 def normalize(payload):
     """把任意输入整形成规范的器件字段字典（不含库存）。"""
     payload = payload or {}
+    maintenance = to_flag(payload.get("maintenance"))
+    unavailable = 0 if maintenance else to_flag(payload.get("unavailable"))
     return {
         "name": to_text(payload.get("name")),
+        "asset_no": to_text(payload.get("asset_no")),
+        "image_data": to_text(payload.get("image_data")),
         "category": to_text(payload.get("category")),
         "spec": to_text(payload.get("spec")),
         "unit": to_text(payload.get("unit")) or DEFAULT_UNIT,
         "location": to_text(payload.get("location")),
+        "owner": to_text(payload.get("owner")),
+        "maintenance": maintenance,
+        "unavailable": unavailable,
         "threshold": max(to_number(payload.get("threshold")), 0.0),
         "remark": to_text(payload.get("remark")),
     }
@@ -56,6 +79,13 @@ def validate(fields):
         return "器件名称不能为空"
     if len(fields["name"]) > 120:
         return "器件名称过长"
+    if len(fields.get("asset_no", "")) > 120:
+        return "固定资产编号过长"
+    image_data = fields.get("image_data", "")
+    if len(image_data) > MAX_IMAGE_DATA_LENGTH:
+        return "设备图片过大，请选择较小的图片"
+    if image_data and not image_data.startswith(IMAGE_PREFIXES):
+        return "设备图片格式不正确"
     if fields.get("threshold", 0) < 0:
         return "预警值不能为负数"
     return None

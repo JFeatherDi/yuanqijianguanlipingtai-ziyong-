@@ -15,6 +15,7 @@ TX_IN = "in"
 TX_OUT = "out"
 TX_IMPORT = "import"
 TX_RETURN = "return"
+TX_ADJUST = "adjust"
 
 # 流水类型的中文名，前端与导出共用同一份事实来源
 TX_LABELS = {
@@ -23,6 +24,7 @@ TX_LABELS = {
     TX_OUT: "出库",
     TX_IMPORT: "导入",
     TX_RETURN: "归还",
+    TX_ADJUST: "库存调整",
 }
 
 
