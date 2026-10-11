@@ -64,8 +64,10 @@ class Config:
 
     # ---- 鉴权 ----
     SECRET_KEY = _load_secret_key()
-    USERNAME = _env("APP_USERNAME", "IOTAT")
+    USERNAME = _env("APP_USERNAME", "SWUST")
     PASSWORD = _env("APP_PASSWORD", "swust350351")
+    ADMIN_FULL_NAME = _env("APP_ADMIN_FULL_NAME", USERNAME)
+    ADMIN_PHONE = _env("APP_ADMIN_PHONE", "")
     SESSION_LIFETIME_HOURS = _env("APP_SESSION_HOURS", 12, int)
 
     # ---- 登录限流（IP 与账号双维度，任一超限即锁定）----

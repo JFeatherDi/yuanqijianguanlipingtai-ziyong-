@@ -6,7 +6,7 @@
   登录一次就能替同 IP 的爆破进度清零。
 - login_required 装饰器统一拦截未登录请求，返回 401
 - 普通用户会话记录口令版本号：管理员重置密码或删除账号后旧会话立即失效
-- admin_required 在登录基础上再校验管理员角色，普通用户返回 403
+- manager_required 校验设备管理权限；superadmin_required 校验总管理员权限
 """
 from __future__ import annotations
 
@@ -84,8 +84,8 @@ def reset_rate_limits():
         _failures.clear()
 
 
-def _member_session_valid():
-    """校验普通用户会话：账号仍存在，且口令版本与登录时一致。"""
+def _database_session_valid():
+    """校验数据库账号会话：账号、口令版本和角色均未变化。"""
     from .db import get_db
     from .services import users as user_service
 
@@ -95,7 +95,10 @@ def _member_session_valid():
     row = user_service.get_user(get_db(), uid)
     if row is None:
         return False
-    return row["pw_version"] == session.get("ver")
+    return (
+        row["pw_version"] == session.get("ver")
+        and row["role"] == session.get("role")
+    )
 
 
 def login_required(view):
@@ -103,7 +106,7 @@ def login_required(view):
     def wrapper(*args, **kwargs):
         if not session.get("user"):
             return jsonify({"ok": False, "msg": "未登录或会话已过期"}), 401
-        if session.get("role") != "admin" and not _member_session_valid():
+        if session.get("role") != "superadmin" and not _database_session_valid():
             session.clear()
             return jsonify({"ok": False, "msg": "会话已失效，请重新登录"}), 401
         return view(*args, **kwargs)
@@ -111,17 +114,34 @@ def login_required(view):
     return wrapper
 
 
-def admin_required(view):
-    """管理员专用接口：先过登录校验，再校验角色。"""
+def manager_required(view):
+    """设备管理操作：管理员和总管理员可用。"""
 
     @login_required
     @wraps(view)
     def wrapper(*args, **kwargs):
-        if session.get("role") != "admin":
+        if session.get("role") not in ("manager", "superadmin"):
             return jsonify({"ok": False, "msg": "该操作需要管理员权限"}), 403
         return view(*args, **kwargs)
 
     return wrapper
+
+
+def superadmin_required(view):
+    """账号与角色管理仅允许总管理员操作。"""
+
+    @login_required
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if session.get("role") != "superadmin":
+            return jsonify({"ok": False, "msg": "该操作需要总管理员权限"}), 403
+        return view(*args, **kwargs)
+
+    return wrapper
+
+
+# 保留旧名称，既有管理接口默认允许两级管理员。
+admin_required = manager_required
 
 
 def current_user():

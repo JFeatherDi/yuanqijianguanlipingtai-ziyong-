@@ -1,6 +1,7 @@
 """应用工厂：装配配置、蓝图、跨域、SPA 静态资源与错误处理。
 
 用法：
+    cd "d:\ljy\POSTGRADUATE\ZERO\equipment\one\器件管理系统-功能更新-20261002\器件管理系统-功能更新-20261002"
     python -m backend.app          # 直接启动（waitress）
     flask --app backend.app run    # 开发调试
 """
