@@ -18,11 +18,19 @@ SELECT
     (SELECT COUNT(DISTINCT category) FROM components
       WHERE IFNULL(category, '') <> '')                                AS categories,
     (SELECT ROUND(IFNULL(SUM(stock), 0), 6) FROM components)           AS total_stock,
+    ((SELECT ROUND(IFNULL(SUM(stock + maintenance_qty + unavailable_qty), 0), 6) FROM components) +
+     (SELECT ROUND(IFNULL(SUM(qty), 0), 6) FROM custody_positions
+       WHERE ROUND(qty, 6) > 0))                                       AS total_count,
     (SELECT COUNT(*) FROM components
       WHERE threshold > 0 AND stock <= threshold)                      AS low_count,
     (SELECT COUNT(*) FROM components
       WHERE threshold > 0 AND stock > threshold)                       AS healthy_count,
     (SELECT COUNT(*) FROM components WHERE threshold > 0)              AS guarded_count,
+    (SELECT ROUND(IFNULL(SUM(maintenance_qty), 0), 6) FROM components) AS maintenance_count,
+    (SELECT ROUND(IFNULL(SUM(unavailable_qty), 0), 6) FROM components) AS unavailable_count,
+    (SELECT ROUND(IFNULL(SUM(qty), 0), 6) FROM custody_positions
+      WHERE ROUND(qty, 6) > 0)                                         AS borrowed_count,
+    (SELECT ROUND(IFNULL(SUM(stock), 0), 6) FROM components)           AS available_count,
     (SELECT ROUND(IFNULL(SUM(delta), 0), 6) FROM transactions WHERE delta > 0)  AS inbound_total,
     (SELECT ROUND(IFNULL(SUM(-delta), 0), 6) FROM transactions WHERE delta < 0) AS outbound_total,
     (SELECT COUNT(*) FROM transactions)                                AS total_ops,

@@ -3,15 +3,18 @@ from __future__ import annotations
 
 import csv
 import io
+import sqlite3
 
-from flask import Blueprint, Response, jsonify, request
+from flask import Blueprint, Response, jsonify, request, send_file
+from openpyxl import Workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.worksheet.datavalidation import DataValidation
 
 from ..db import get_db, to_dicts
-from ..security import admin_required, current_user, login_required
+from ..security import current_user, superadmin_required
 from ..services import importer
 from ..services.importer import ImportError_
-from ..services.inventory import TX_IMPORT, TX_INIT, apply_change
-from ..services.quantity import round6
+from ..services.inventory import TX_IMPORT, log_transaction
 
 bp = Blueprint("records", __name__, url_prefix="/api/records")
 
@@ -31,10 +34,10 @@ LEFT JOIN components c ON c.id = t.component_id
 {where}
 """
 
-EXPORT_HEADER = ["名称", "分类", "规格", "单位", "位置", "库存", "预警值", "备注"]
+EXPORT_HEADER = ["设备名称", "设备固定资产编号", "分类", "设备型号", "单位", "位置", "设备负责人", "设备状态", "备注"]
 TEMPLATE_ROWS = [
-    ["电阻10K", "电阻", "10K 0805", "个", "柜A-1", "100", "20", "示例行"],
-    ["电容100uF", "电容", "100uF 16V", "个", "柜A-2", "50", "10", "示例行"],
+    ["巡检机器人", "ZC-2026-001", "移动机器人", "RB-01", "台", "特种环境实验室A区", "张老师", "可借用", "每行代表一台设备"],
+    ["防爆机械臂", "ZC-2026-002", "作业设备", "ARM-EX", "台", "特种环境实验室B区", "李老师", "维护中", "每行代表一台设备"],
 ]
 
 
@@ -63,7 +66,7 @@ def _conditions():
 
 
 @bp.route("")
-@login_required
+@superadmin_required
 def list_records():
     db = get_db()
     where, args = _conditions()
@@ -91,25 +94,79 @@ def _to_csv(rows):
 
 
 @bp.route("/export")
-@login_required
+@superadmin_required
 def export_components():
     db = get_db()
     rows = db.execute(
-        "SELECT name, category, spec, unit, location, stock, threshold, remark "
-        "FROM components ORDER BY category, name"
+        "WITH listed AS (SELECT c.*, "
+        "(SELECT ROUND(IFNULL(SUM(p.qty), 0), 6) FROM custody_positions p "
+        " WHERE p.component_id = c.id AND ROUND(p.qty, 6) > 0) AS borrowed_qty "
+        "FROM components c) "
+        "SELECT name, asset_no, category, spec, unit, location, owner, "
+        "CASE WHEN stock > 0 THEN '可借用' WHEN borrowed_qty > 0 THEN '借出中' "
+        "WHEN maintenance_qty > 0 THEN '维护中' ELSE '不可借' END AS equipment_status, "
+        "remark FROM listed ORDER BY category, name, asset_no"
     ).fetchall()
     body = _to_csv([EXPORT_HEADER, *([row[key] for key in row.keys()] for row in rows)])
     return _csv_response(body, "components.csv")
 
 
 @bp.route("/template")
-@login_required
+@superadmin_required
 def download_template():
-    return _csv_response(_to_csv([EXPORT_HEADER, *TEMPLATE_ROWS]), "template.csv")
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "设备信息"
+    sheet.append(EXPORT_HEADER)
+    for row in TEMPLATE_ROWS:
+        sheet.append(row)
+
+    header_fill = PatternFill("solid", fgColor="2F7FD3")
+    header_font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
+    body_font = Font(name="Arial", size=10, color="243447")
+    border = Border(bottom=Side(style="thin", color="D5DFEA"))
+    for cell in sheet[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = border
+    for row in sheet.iter_rows(min_row=2):
+        for cell in row:
+            cell.font = body_font
+            cell.alignment = Alignment(vertical="center")
+            cell.border = border
+
+    widths = [20, 22, 16, 18, 10, 24, 16, 14, 28]
+    for index, width in enumerate(widths, start=1):
+        sheet.column_dimensions[chr(64 + index)].width = width
+    sheet.row_dimensions[1].height = 24
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = f"A1:I{sheet.max_row}"
+    sheet.sheet_view.showGridLines = False
+    sheet.column_dimensions["B"].number_format = "@"
+    status_validation = DataValidation(
+        type="list",
+        formula1='"可借用,维护中,不可借"',
+        allow_blank=True,
+    )
+    status_validation.error = "请选择可借用、维护中或不可借"
+    status_validation.errorTitle = "设备状态无效"
+    sheet.add_data_validation(status_validation)
+    status_validation.add("H2:H1000")
+
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name="设备批量导入模板.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @bp.route("/import", methods=["POST"])
-@admin_required
+@superadmin_required
 def import_file():
     upload = request.files.get("file")
     if upload is None:
@@ -130,42 +187,27 @@ def import_file():
     imported = 0
     try:
         for item in items:
-            existing = db.execute(
-                "SELECT id FROM components WHERE name = ? AND IFNULL(spec, '') = IFNULL(?, '')",
-                (item["name"], item["spec"]),
-            ).fetchone()
-
-            if existing:
-                # 已存在：库存累加到原记录
-                if item["stock"]:
-                    apply_change(db, existing["id"], item["stock"], TX_IMPORT, operator, "导入累加")
-            else:
-                cursor = db.execute(
-                    "INSERT INTO components (name, category, spec, unit, location, stock, threshold, remark) "
-                    "VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
-                    (
-                        item["name"],
-                        item["category"],
-                        item["spec"],
-                        item["unit"],
-                        item["location"],
-                        item["threshold"],
-                        item["remark"],
-                    ),
-                )
-                if item["stock"]:
-                    # 导入数量按六位归整方案静默归整：表格里常出现
-                    # 0.30000000000004 这类浮点尾巴，直接拒绝会妨碍导入
-                    apply_change(
-                        db,
-                        cursor.lastrowid,
-                        round6(item["stock"]),
-                        TX_INIT,
-                        operator,
-                        "导入初始库存",
-                    )
+            cursor = db.execute(
+                "INSERT INTO components "
+                "(name, asset_no, category, spec, unit, location, owner, maintenance, unavailable, "
+                "maintenance_qty, unavailable_qty, stock, threshold, remark) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
+                (
+                    item["name"], item["asset_no"], item["category"], item["spec"],
+                    item["unit"], item["location"], item["owner"],
+                    item["maintenance"], item["unavailable"],
+                    1 if item["maintenance"] else 0,
+                    1 if item["unavailable"] else 0,
+                    0 if item["maintenance"] or item["unavailable"] else 1,
+                    item["remark"],
+                ),
+            )
+            log_transaction(db, cursor.lastrowid, 1, TX_IMPORT, operator, "导入单台设备")
             imported += 1
         db.commit()
+    except sqlite3.IntegrityError:
+        db.rollback()
+        return jsonify({"ok": False, "msg": "固定资产编号重复，请确保每台设备编号唯一"}), 400
     except Exception as exc:
         db.rollback()
         return jsonify({"ok": False, "msg": f"写入失败: {exc}"}), 500
